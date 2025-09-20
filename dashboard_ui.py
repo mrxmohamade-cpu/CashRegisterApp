@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QLineEdit, QDialogButtonBox, QListWidget,
                              QListWidgetItem, QTextEdit, QSplitter, QHeaderView,
                              QStyle, QFrame, QSizePolicy, QMenu, QFormLayout, QCheckBox,
-                             QGridLayout)
+                             QGridLayout, QGraphicsDropShadowEffect)
 from PyQt6.QtGui import QColor, QDoubleValidator, QMouseEvent, QFont, QAction
 from PyQt6.QtCore import Qt, QSize, QPoint
 
@@ -410,6 +410,12 @@ class SummaryCard(QFrame):
         main_layout.addWidget(self.caption_label)
         main_layout.addStretch(1)
 
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setOffset(0, 14)
+        shadow.setBlurRadius(28)
+        shadow.setColor(QColor(15, 23, 42, 40))
+        self.setGraphicsEffect(shadow)
+
     def set_value(self, value_text):
         self.value_label.setText(value_text)
 
@@ -446,6 +452,12 @@ class SessionHistoryItem(QWidget):
         self.card_layout = QHBoxLayout(self.card)
         self.card_layout.setContentsMargins(8, 8, 8, 8)
         self.card_layout.setSpacing(12)
+
+        self.card_shadow = QGraphicsDropShadowEffect(self.card)
+        self.card_shadow.setOffset(0, 10)
+        self.card_shadow.setBlurRadius(20)
+        self.card_shadow.setColor(QColor(15, 23, 42, 60))
+        self.card.setGraphicsEffect(self.card_shadow)
 
         # Left: date/time column
         date_time_layout = QVBoxLayout()
@@ -535,26 +547,30 @@ class SessionHistoryItem(QWidget):
         # default unselected style
         self.set_selected_state(False)
 
+    def _update_shadow(self, blur_radius: float, alpha: int):
+        self.card_shadow.setBlurRadius(blur_radius)
+        self.card_shadow.setColor(QColor(15, 23, 42, max(0, min(alpha, 255))))
+
     def set_selected_state(self, selected: bool):
         """Apply selected/unselected visual style to the card frame."""
         if selected:
             self.card.setStyleSheet("""
                 QFrame#HistoryCard {
-                    border: 1px solid rgba(37, 99, 235, 0.28);
+                    border: 2px solid rgba(37, 99, 235, 0.35);
                     border-radius: 18px;
-                    background-color: rgba(37, 99, 235, 0.08);
-                    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+                    background-color: rgba(37, 99, 235, 0.12);
                 }
             """)
+            self._update_shadow(26, 110)
         else:
             self.card.setStyleSheet("""
                 QFrame#HistoryCard {
                     border: 1px solid rgba(148, 163, 184, 0.22);
                     border-radius: 18px;
                     background-color: rgba(255,255,255,0.96);
-                    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
                 }
             """)
+            self._update_shadow(18, 80)
 
     def enterEvent(self, event):
         # subtle hover highlight
@@ -563,10 +579,10 @@ class SessionHistoryItem(QWidget):
                 border: 1px solid rgba(37, 99, 235, 0.3);
                 border-radius: 18px;
                 background-color: rgba(37, 99, 235, 0.1);
-                box-shadow: 0 14px 28px rgba(15, 23, 42, 0.1);
             }
         """
         self.card.setStyleSheet(hover_style)
+        self._update_shadow(22, 100)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
@@ -939,6 +955,11 @@ class UserDashboard(QMainWindow):
 
         tables_container = QWidget()
         tables_container.setObjectName("Container")
+        tables_shadow = QGraphicsDropShadowEffect(tables_container)
+        tables_shadow.setOffset(0, 12)
+        tables_shadow.setBlurRadius(24)
+        tables_shadow.setColor(QColor(15, 23, 42, 45))
+        tables_container.setGraphicsEffect(tables_shadow)
         tables_layout = QVBoxLayout(tables_container)
         
         # Expenses table
@@ -978,6 +999,11 @@ class UserDashboard(QMainWindow):
 
         notes_container = QWidget()
         notes_container.setObjectName("Container")
+        notes_shadow = QGraphicsDropShadowEffect(notes_container)
+        notes_shadow.setOffset(0, 12)
+        notes_shadow.setBlurRadius(24)
+        notes_shadow.setColor(QColor(15, 23, 42, 45))
+        notes_container.setGraphicsEffect(notes_shadow)
         notes_layout = QVBoxLayout(notes_container)
         notes_label = QLabel("ملاحظات الجلسة")
         notes_label.setObjectName("SectionTitle")
@@ -1047,8 +1073,9 @@ class UserDashboard(QMainWindow):
                 font-size: 11pt;
             }
             #HistorySearch:focus {
-                border-color: #2563eb;
-                box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+                border: 2px solid #2563eb;
+                padding: 11px 17px;
+                background: rgba(255, 255, 255, 0.95);
             }
             #HistorySearch::placeholder {
                 color: rgba(100, 116, 139, 0.75);
@@ -1145,7 +1172,6 @@ class UserDashboard(QMainWindow):
                 background-color: #ffffff;
                 border-radius: 24px;
                 border: 1px solid rgba(148, 163, 184, 0.25);
-                box-shadow: 0 25px 60px rgba(15, 23, 42, 0.08);
             }
             QLabel#SummaryCardIcon {
                 background-color: rgba(37, 99, 235, 0.12);
@@ -1174,7 +1200,6 @@ class UserDashboard(QMainWindow):
                 border: 1px solid rgba(148, 163, 184, 0.25);
                 border-radius: 20px;
                 padding: 24px;
-                box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
             }
             #SectionTitle {
                 font-size: 15.5pt;

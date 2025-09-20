@@ -1,12 +1,12 @@
 import sys
 import datetime
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QPushButton, QLabel, QTableWidget, QHeaderView, 
-                             QTableWidgetItem, QDialog, QLineEdit, QMessageBox, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QPushButton, QLabel, QTableWidget, QHeaderView,
+                             QTableWidgetItem, QDialog, QLineEdit, QMessageBox,
                              QDialogButtonBox, QHBoxLayout, QFrame,
                              QFormLayout, QListWidget, QListWidgetItem, QStackedWidget,
                              QComboBox, QSizePolicy, QStyle, QSplitter, QTextEdit,
-                             QCheckBox, QMenu, QDateEdit)
+                             QCheckBox, QMenu, QDateEdit, QGraphicsDropShadowEffect)
 from PyQt6.QtGui import (QColor, QMouseEvent, QDoubleValidator, QIcon, QFont, 
                          QPainter, QPen, QBrush, QAction)
 from PyQt6.QtCore import Qt, QPoint, QSize, QDate, QRect
@@ -136,6 +136,12 @@ class StatCard(QFrame):
         layout.addWidget(self.value_label)
         layout.addWidget(self.caption_label)
         layout.addStretch(1)
+
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setOffset(0, 14)
+        shadow.setBlurRadius(28)
+        shadow.setColor(QColor(15, 23, 42, 40))
+        self.setGraphicsEffect(shadow)
 
     def set_value(self, value_text):
         self.value_label.setText(value_text)
@@ -633,8 +639,9 @@ class AdminDashboard(QMainWindow):
                 color: #0f172a;
             }
             QLineEdit:focus, QComboBox:focus, QDateEdit:focus {
-                border-color: #2563eb;
-                box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+                border: 2px solid #2563eb;
+                padding: 9px 13px;
+                background-color: #ffffff;
             }
             QLineEdit#UserSearch {
                 background-color: rgba(15, 23, 42, 0.35);
@@ -708,7 +715,6 @@ class AdminDashboard(QMainWindow):
                 background-color: #ffffff;
                 border-radius: 24px;
                 border: 1px solid rgba(148, 163, 184, 0.25);
-                box-shadow: 0 25px 60px rgba(15, 23, 42, 0.08);
             }
             QLabel#StatCardIcon {
                 background-color: rgba(37, 99, 235, 0.12);

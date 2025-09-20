@@ -240,9 +240,9 @@ class LoginWindow(QMainWindow):
                 color: #0f172a;
             }
             QLineEdit#LoginField:focus {
-                border: 1px solid #2563eb;
+                border: 2px solid #2563eb;
+                padding: 13px 15px;
                 background-color: #ffffff;
-                box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
             }
             QLineEdit::placeholder {
                 color: #94a3b8;
