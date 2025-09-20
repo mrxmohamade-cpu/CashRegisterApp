@@ -696,6 +696,29 @@ class AdminDashboard(QMainWindow):
         layout.addStretch()
         self.pages.addWidget(scroll)
 
+    def toggle_timestamp_visibility(self, state):
+        if isinstance(state, int):
+            is_checked = state == Qt.CheckState.Checked.value
+        else:
+            is_checked = bool(state)
+
+        self.show_timestamps = is_checked
+
+        tables_with_timestamp_columns = []
+
+        if hasattr(self, "user_sessions_table"):
+            tables_with_timestamp_columns.append((self.user_sessions_table, [0, 1]))
+
+        if hasattr(self, "reports_table"):
+            tables_with_timestamp_columns.append((self.reports_table, [1, 2]))
+
+        for table, columns in tables_with_timestamp_columns:
+            if table is None:
+                continue
+            for column in columns:
+                if 0 <= column < table.columnCount():
+                    table.setColumnHidden(column, not is_checked)
+
     def apply_styles(self):
         self.setStyleSheet("""
 
