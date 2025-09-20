@@ -5,7 +5,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QLabel, QPushButton, QTableWidget, QTableWidgetItem, QDialog,
                              QLineEdit, QDialogButtonBox, QListWidget,
                              QListWidgetItem, QTextEdit, QSplitter, QHeaderView,
-                             QStyle, QFrame, QSizePolicy, QMenu, QFormLayout, QCheckBox)
+                             QStyle, QFrame, QSizePolicy, QMenu, QFormLayout, QCheckBox,
+                             QGridLayout)
 from PyQt6.QtGui import QColor, QDoubleValidator, QMouseEvent, QFont, QAction
 from PyQt6.QtCore import Qt, QSize, QPoint
 
@@ -365,36 +366,56 @@ class CustomMessageBox(CustomDialog):
 
 # --- Summary card ---
 class SummaryCard(QFrame):
-    def __init__(self, title, icon: QStyle.StandardPixmap):
+    def __init__(self, title, icon: QStyle.StandardPixmap, accent: str = "primary"):
         super().__init__()
         self.setObjectName("SummaryCard")
+        self.setProperty("accentColor", accent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.setMinimumWidth(220)
-        main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(12)
+        self.setMinimumHeight(140)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(18, 18, 18, 18)
+        main_layout.setSpacing(14)
+
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(12)
 
         self.icon_label = QLabel()
         self.icon_label.setObjectName("SummaryCardIcon")
-        self.icon_label.setFixedSize(QSize(48, 48))
-        pixmap = self.style().standardIcon(icon).pixmap(QSize(28, 28))
+        self.icon_label.setFixedSize(QSize(44, 44))
+        pixmap = self.style().standardIcon(icon).pixmap(QSize(26, 26))
         self.icon_label.setPixmap(pixmap)
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(self.icon_label)
 
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(2)
         self.title_label = QLabel(title)
         self.title_label.setObjectName("SummaryCardTitle")
+        self.title_label.setWordWrap(True)
+
+        header_layout.addWidget(self.icon_label)
+        header_layout.addWidget(self.title_label, 1)
+
         self.value_label = QLabel("0.00")
         self.value_label.setObjectName("SummaryCardValue")
         self.value_label.setWordWrap(True)
-        text_layout.addWidget(self.title_label)
-        text_layout.addWidget(self.value_label)
-        main_layout.addLayout(text_layout)
+
+        self.caption_label = QLabel("")
+        self.caption_label.setObjectName("SummaryCardCaption")
+        self.caption_label.setWordWrap(True)
+        self.caption_label.setVisible(False)
+
+        main_layout.addLayout(header_layout)
+        main_layout.addWidget(self.value_label)
+        main_layout.addWidget(self.caption_label)
+        main_layout.addStretch(1)
 
     def set_value(self, value_text):
         self.value_label.setText(value_text)
+
+    def set_caption(self, caption_text: str):
+        self.caption_label.setText(caption_text)
+        self.caption_label.setVisible(bool(caption_text))
 
 # --- SessionHistoryItem (FIXED) ---
 
@@ -519,28 +540,30 @@ class SessionHistoryItem(QWidget):
         if selected:
             self.card.setStyleSheet("""
                 QFrame#HistoryCard {
-                    border: 1px solid rgba(13,110,253,0.18);
-                    border-radius: 10px;
-                    background-color: rgba(13,110,253,0.03);
+                    border: 1px solid rgba(37, 99, 235, 0.28);
+                    border-radius: 18px;
+                    background-color: rgba(37, 99, 235, 0.08);
+                    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
                 }
             """)
         else:
             self.card.setStyleSheet("""
                 QFrame#HistoryCard {
-                    border: 1px solid rgba(0,0,0,0.06);
-                    border-radius: 10px;
-                    background-color: white;
+                    border: 1px solid rgba(148, 163, 184, 0.22);
+                    border-radius: 18px;
+                    background-color: rgba(255,255,255,0.96);
+                    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
                 }
             """)
 
     def enterEvent(self, event):
         # subtle hover highlight
-        prev = self.card.styleSheet()
         hover_style = """
             QFrame#HistoryCard {
-                border: 1px solid rgba(13,110,253,0.22);
-                border-radius: 10px;
-                background-color: rgba(13,110,253,0.04);
+                border: 1px solid rgba(37, 99, 235, 0.3);
+                border-radius: 18px;
+                background-color: rgba(37, 99, 235, 0.1);
+                box-shadow: 0 14px 28px rgba(15, 23, 42, 0.1);
             }
         """
         self.card.setStyleSheet(hover_style)
@@ -802,6 +825,8 @@ class UserDashboard(QMainWindow):
         self.user = user
         self.db_session = SessionLocal()
         self.current_session = None
+        self.all_sessions = []
+        self.selected_session_id = None
         self.setWindowTitle(f"نظام إدارة الصندوق - {self.user.username}")
         self.setGeometry(80, 80, 1300, 760)
         self.setMinimumSize(1100, 650)
@@ -822,11 +847,17 @@ class UserDashboard(QMainWindow):
         history_widget = QWidget()
         history_widget.setObjectName("HistoryWidget")
         history_layout = QVBoxLayout(history_widget)
-        history_layout.setContentsMargins(0,0,0,0)
+        history_layout.setContentsMargins(0, 0, 0, 0)
         history_layout.setSpacing(0)
 
         history_label = QLabel("سجل الجلسات")
         history_label.setObjectName("HistoryTitle")
+
+        self.history_search_input = QLineEdit()
+        self.history_search_input.setObjectName("HistorySearch")
+        self.history_search_input.setPlaceholderText("ابحث باسم العامل أو تاريخ الجلسة أو الحالة...")
+        self.history_search_input.setClearButtonEnabled(True)
+        self.history_search_input.textChanged.connect(self.filter_sessions_history)
 
         self.sessions_history_list = QListWidget()
         self.sessions_history_list.setObjectName("SessionsList")
@@ -835,6 +866,7 @@ class UserDashboard(QMainWindow):
         self.sessions_history_list.currentItemChanged.connect(self.select_session_from_history)
 
         history_layout.addWidget(history_label)
+        history_layout.addWidget(self.history_search_input)
         history_layout.addWidget(self.sessions_history_list)
         splitter.addWidget(history_widget)
 
@@ -873,33 +905,35 @@ class UserDashboard(QMainWindow):
 
         details_layout.addLayout(top_bar_layout)
 
-        summary_layout = QHBoxLayout()
-        summary_layout.setSpacing(25)
-        self.start_balance_card = SummaryCard("رصيد البداية", QStyle.StandardPixmap.SP_FileDialogStart)
-        self.total_expense_card = SummaryCard("مجموع المصاريف", QStyle.StandardPixmap.SP_ArrowDown)
-        
-        # NEW: Flexi summary card
-        self.current_flexi_card = SummaryCard("رصيد الفليكسي", QStyle.StandardPixmap.SP_DirOpenIcon)
-        
-        # -- تعديل --: تغيير بطاقة الربح الصافي إلى بطاقة الفرق في النقد
-        self.net_profit_card = SummaryCard("الفرق في النقد", QStyle.StandardPixmap.SP_ArrowUp)
-        
-        # -- إضافة --: بطاقة جديدة للفليكسي المستهلك
-        self.flexi_consumed_card = SummaryCard("الفليكسي المستهلك", QStyle.StandardPixmap.SP_ArrowDown)
-        
-        # -- إضافة --: بطاقة جديدة للربح الصافي الكلي
-        self.total_net_profit_card = SummaryCard("الربح الصافي الكلي", QStyle.StandardPixmap.SP_DialogApplyButton)
+        summary_container = QFrame()
+        summary_container.setObjectName("SummaryContainer")
+        summary_grid = QGridLayout(summary_container)
+        summary_grid.setContentsMargins(20, 20, 20, 20)
+        summary_grid.setHorizontalSpacing(22)
+        summary_grid.setVerticalSpacing(22)
 
+        self.start_balance_card = SummaryCard("رصيد البداية", QStyle.StandardPixmap.SP_FileDialogStart, accent="emerald")
+        self.total_expense_card = SummaryCard("مجموع المصاريف", QStyle.StandardPixmap.SP_ArrowDown, accent="orange")
+        self.current_flexi_card = SummaryCard("رصيد الفليكسي", QStyle.StandardPixmap.SP_DirOpenIcon, accent="indigo")
+        self.net_profit_card = SummaryCard("الفرق في النقد", QStyle.StandardPixmap.SP_ArrowUp, accent="cyan")
+        self.flexi_consumed_card = SummaryCard("الفليكسي المستهلك", QStyle.StandardPixmap.SP_ArrowDown, accent="rose")
+        self.total_net_profit_card = SummaryCard("الربح الصافي الكلي", QStyle.StandardPixmap.SP_DialogApplyButton, accent="violet")
 
-        summary_layout.addWidget(self.start_balance_card)
-        summary_layout.addWidget(self.total_expense_card)
-        summary_layout.addWidget(self.current_flexi_card)
-        summary_layout.addWidget(self.net_profit_card)
-        summary_layout.addWidget(self.flexi_consumed_card)
-        summary_layout.addWidget(self.total_net_profit_card)
+        summary_cards = [
+            self.start_balance_card,
+            self.total_expense_card,
+            self.current_flexi_card,
+            self.net_profit_card,
+            self.flexi_consumed_card,
+            self.total_net_profit_card,
+        ]
 
+        for index, card in enumerate(summary_cards):
+            row = index // 3
+            column = index % 3
+            summary_grid.addWidget(card, row, column)
 
-        details_layout.addLayout(summary_layout)
+        details_layout.addWidget(summary_container)
 
         bottom_splitter = QSplitter(Qt.Orientation.Vertical)
 
@@ -985,21 +1019,46 @@ class UserDashboard(QMainWindow):
     def apply_styles(self):
         stylesheet = """
             QMainWindow {
-                background-color: #f4f7fc;
-                font-family: 'Segoe UI', Arial, sans-serif;
+                background-color: #e8ecf7;
+                font-family: 'Segoe UI', 'Cairo', sans-serif;
             }
-            #HistoryWidget { background-color: #ffffff; min-width: 300px; max-width: 520px; border-right: 1px solid #dee2e6; }
-            #DetailsWidget { background-color: #f4f7fc; }
+            #HistoryWidget {
+                background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f8fafc, stop:1 #eef2ff);
+                min-width: 320px;
+                max-width: 520px;
+                border-right: 1px solid rgba(148, 163, 184, 0.25);
+            }
+            #DetailsWidget { background-color: #eef2ff; }
             #HistoryTitle {
-                font-size: 15pt; font-weight: 700; color: #343a40;
-                padding: 18px; background-color: #f8f9fa; border-bottom: 1px solid #dee2e6;
+                font-size: 16pt;
+                font-weight: 800;
+                color: #0f172a;
+                padding: 22px 22px 10px;
+                background: transparent;
             }
-            #WelcomeLabel { font-size: 17pt; font-weight: 800; color: #212529; margin-bottom: 10px; }
-            
+            #HistorySearch {
+                margin: 0 22px 18px;
+                padding: 12px 18px;
+                border-radius: 16px;
+                border: 1px solid rgba(148, 163, 184, 0.35);
+                background: rgba(255, 255, 255, 0.85);
+                color: #0f172a;
+                font-size: 11pt;
+            }
+            #HistorySearch:focus {
+                border-color: #2563eb;
+                box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+            }
+            #HistorySearch::placeholder {
+                color: rgba(100, 116, 139, 0.75);
+            }
+            #WelcomeLabel { font-size: 18pt; font-weight: 800; color: #0f172a; margin-bottom: 10px; }
+
             /* --- Custom Dialog Styles --- */
             QDialog { background-color: transparent; }
-            #CustomDialogFrame { 
-                background-color: #ffffff; 
+            #CustomDialogFrame {
+                background-color: #ffffff;
                 border: 1px solid rgba(0,0,0,0.1);
                 border-radius: 12px;
             }
@@ -1025,62 +1084,103 @@ class UserDashboard(QMainWindow):
             }
             QDialog QLineEdit:focus, QDialog QTextEdit:focus { border-color: #86b7fe; }
 
-            QListWidget#SessionsList { border: none; font-size: 13pt; }
-            QListWidget#SessionsList::item { border-bottom: 1px solid #e9ecef; padding: 0px; }
-            QListWidget#SessionsList::item:hover { background-color: #f8f9fa; }
-            QListWidget#SessionsList::item:selected { background-color: transparent; color: black; border: none; }
-            
-            QWidget#HistoryItem { background-color: transparent; }
-            #HistoryItemDate { font-size: 11pt; font-weight: 700; color: #212529; }
-            #HistoryItemTime { font-size: 9pt; color: #6c757d; }
-            #HistoryItemProfit { font-size: 12pt; font-weight: 800; }
-            #HistoryItemProfit[positive="true"] { color: #198754; }
-            #HistoryItemProfit[positive="false"] { color: #dc3545; }
-            
-            #HistoryItemStatus {
-                font-size: 9pt; font-weight: 800; padding: 4px 8px;
-                border-radius: 6px;
+            QListWidget#SessionsList {
+                border: none;
+                font-size: 13pt;
+                padding: 0 16px 16px;
+                background: transparent;
             }
-            #HistoryItemStatus[status="open"] { background-color: #d1e7dd; color: #0f5132; }
-            #HistoryItemStatus[status="closed"] { background-color: #f8d7da; color: #842029; }
-            
-            #SelectionIndicator { background-color: #0d6efd; border-radius: 2px; }
-            
-            QWidget#HistoryItem[selected="true"] { background-color: #e3f2fd; }
+            QListWidget#SessionsList::item { border: none; padding: 6px 0; }
+            QListWidget#SessionsList::item:selected { background-color: transparent; color: black; border: none; }
+
+            QWidget#HistoryItem { background-color: transparent; }
+            #HistoryItemDate { font-size: 11.5pt; font-weight: 700; color: #1e293b; }
+            #HistoryItemTime { font-size: 9pt; color: #64748b; }
+            #HistoryItemNote { color: #334155; font-size: 13px; }
+            #HistoryItemProfit { font-size: 12pt; font-weight: 800; }
 
             QPushButton {
-                border: none; padding: 12px 18px; font-size: 10pt;
-                font-weight: 700; border-radius: 8px;
+                border: none;
+                padding: 12px 22px;
+                font-size: 10.5pt;
+                font-weight: 700;
+                border-radius: 14px;
+                background: #cbd5f5;
+                color: #1e293b;
             }
-            QPushButton:disabled { background-color: #adb5bd; color: #6c757d; }
-            #PrimaryButton { background-color: #0d6efd; color: white; padding: 10px 20px; }
-            #PrimaryButton:hover { background-color: #0b5ed7; }
-            #SuccessButton { background-color: #198754; color: white; }
-            #SuccessButton:hover { background-color: #157347; }
-            #DangerButton { background-color: #dc3545; color: white; }
-            #DangerButton:hover { background-color: #bb2d3b; }
-            #SecondaryButton { background-color: #6c757d; color: white; }
-            #SecondaryButton:hover { background-color: #5a6268; }
+            QPushButton:disabled { background-color: rgba(148, 163, 184, 0.4); color: #94a3b8; }
+            #PrimaryButton {
+                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #2563eb, stop:1 #1d4ed8);
+                color: white;
+            }
+            #PrimaryButton:hover { background: #1e3a8a; }
+            #SuccessButton {
+                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #22c55e, stop:1 #16a34a);
+                color: white;
+            }
+            #SuccessButton:hover { background: #15803d; }
+            #DangerButton {
+                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #f97316, stop:1 #dc2626);
+                color: white;
+            }
+            #DangerButton:hover { background: #b91c1c; }
+            #SecondaryButton {
+                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #6366f1, stop:1 #4338ca);
+                color: white;
+            }
+            #SecondaryButton:hover { background: #3730a3; }
 
             QDialogButtonBox QPushButton { background-color: #0d6efd; color: white; }
             QDialogButtonBox QPushButton:hover { background-color: #0b5ed7; }
 
-            #SummaryCard { background-color: #ffffff; border-radius: 12px; border: 1px solid #dee2e6; }
-            #SummaryCardIcon { background-color: #e9ecef; border-radius: 24px; color: #0d6efd; }
-            #SummaryCardTitle { font-size: 11pt; font-weight: 700; color: #6c757d; }
-            #SummaryCardValue { font-size: 22pt; font-weight: 800; color: #212529; }
-            
-            #Container { 
-                background-color: #ffffff; 
-                border: 1px solid #e0e5ec;
-                border-radius: 12px; 
-                padding: 20px;
+            #SummaryContainer {
+                background: transparent;
+                border: none;
             }
-            #SectionTitle { 
-                font-size: 15pt; 
+            QFrame#SummaryCard {
+                background-color: #ffffff;
+                border-radius: 24px;
+                border: 1px solid rgba(148, 163, 184, 0.25);
+                box-shadow: 0 25px 60px rgba(15, 23, 42, 0.08);
+            }
+            QLabel#SummaryCardIcon {
+                background-color: rgba(37, 99, 235, 0.12);
+                border-radius: 18px;
+                color: #1d4ed8;
+            }
+            QLabel#SummaryCardTitle { font-size: 12pt; font-weight: 700; color: #64748b; }
+            QLabel#SummaryCardValue { font-size: 26pt; font-weight: 800; color: #0f172a; }
+            QLabel#SummaryCardCaption { font-size: 10pt; color: #64748b; }
+
+            QFrame#SummaryCard[accentColor="emerald"] QLabel#SummaryCardIcon { background-color: rgba(34, 197, 94, 0.18); color: #047857; }
+            QFrame#SummaryCard[accentColor="emerald"] QLabel#SummaryCardValue { color: #047857; }
+            QFrame#SummaryCard[accentColor="orange"] QLabel#SummaryCardIcon { background-color: rgba(249, 115, 22, 0.18); color: #c2410c; }
+            QFrame#SummaryCard[accentColor="orange"] QLabel#SummaryCardValue { color: #c2410c; }
+            QFrame#SummaryCard[accentColor="indigo"] QLabel#SummaryCardIcon { background-color: rgba(99, 102, 241, 0.16); color: #4338ca; }
+            QFrame#SummaryCard[accentColor="indigo"] QLabel#SummaryCardValue { color: #3730a3; }
+            QFrame#SummaryCard[accentColor="cyan"] QLabel#SummaryCardIcon { background-color: rgba(14, 165, 233, 0.2); color: #0e7490; }
+            QFrame#SummaryCard[accentColor="cyan"] QLabel#SummaryCardValue { color: #0e7490; }
+            QFrame#SummaryCard[accentColor="rose"] QLabel#SummaryCardIcon { background-color: rgba(244, 114, 182, 0.2); color: #be123c; }
+            QFrame#SummaryCard[accentColor="rose"] QLabel#SummaryCardValue { color: #be123c; }
+            QFrame#SummaryCard[accentColor="violet"] QLabel#SummaryCardIcon { background-color: rgba(139, 92, 246, 0.18); color: #6d28d9; }
+            QFrame#SummaryCard[accentColor="violet"] QLabel#SummaryCardValue { color: #6d28d9; }
+
+            #Container {
+                background-color: #ffffff;
+                border: 1px solid rgba(148, 163, 184, 0.25);
+                border-radius: 20px;
+                padding: 24px;
+                box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+            }
+            #SectionTitle {
+                font-size: 15.5pt;
                 font-weight: 700;
-                color: #343a40; 
-                margin-bottom: 15px;
+                color: #0f172a;
+                margin-bottom: 18px;
             }
             QTableWidget {
                 border: none; font-size: 11pt; background-color: #ffffff;
@@ -1126,23 +1226,86 @@ class UserDashboard(QMainWindow):
         self.flexi_transactions_table.setAlternatingRowColors(True)
 
     def load_user_sessions_history(self):
-        self.sessions_history_list.clear()
         # Fix #6: Sessions Ordering - This was already correct.
         # Try to eager-load transactions if SQLAlchemy is available; fallback to simple query for mock session
         try:
             if joinedload:
-                sessions = self.db_session.query(CashSession).options(joinedload(CashSession.transactions)).filter_by(user_id=self.user.id).order_by(CashSession.start_time.desc()).all()
+                sessions = (
+                    self.db_session.query(CashSession)
+                    .options(joinedload(CashSession.transactions))
+                    .filter_by(user_id=self.user.id)
+                    .order_by(CashSession.start_time.desc())
+                    .all()
+                )
             else:
-                sessions = self.db_session.query(CashSession).filter_by(user_id=self.user.id).order_by(CashSession.start_time.desc()).all()
+                sessions = (
+                    self.db_session.query(CashSession)
+                    .filter_by(user_id=self.user.id)
+                    .order_by(CashSession.start_time.desc())
+                    .all()
+                )
         except Exception:
-            sessions = self.db_session.query(CashSession).filter_by(user_id=self.user.id).order_by(CashSession.start_time.desc()).all()
-        
+            sessions = (
+                self.db_session.query(CashSession)
+                .filter_by(user_id=self.user.id)
+                .order_by(CashSession.start_time.desc())
+                .all()
+            )
+
+        self.all_sessions = sessions
+        preferred_id = self.selected_session_id or (self.current_session.id if self.current_session else None)
+        self.populate_sessions_list(sessions, preferred_id=preferred_id)
+
+    def populate_sessions_list(self, sessions, preferred_id=None):
+        self.sessions_history_list.blockSignals(True)
+        self.sessions_history_list.clear()
+
         for session in sessions:
             list_item = QListWidgetItem(self.sessions_history_list)
             list_item.setData(Qt.ItemDataRole.UserRole, session.id)
             item_widget = SessionHistoryItem(session)
             list_item.setSizeHint(item_widget.sizeHint())
             self.sessions_history_list.setItemWidget(list_item, item_widget)
+
+        self.sessions_history_list.blockSignals(False)
+
+        if not sessions:
+            self.selected_session_id = None
+            self.display_session_details(None)
+            return
+
+        target_id = preferred_id if preferred_id and any(s.id == preferred_id for s in sessions) else sessions[0].id
+        for index in range(self.sessions_history_list.count()):
+            item = self.sessions_history_list.item(index)
+            if item.data(Qt.ItemDataRole.UserRole) == target_id:
+                self.sessions_history_list.setCurrentRow(index)
+                break
+
+    def filter_sessions_history(self, text: str):
+        if not self.all_sessions:
+            return
+
+        query = (text or "").strip().lower()
+        if not query:
+            filtered = self.all_sessions
+        else:
+            filtered = []
+            for session in self.all_sessions:
+                note = (session.notes or "").lower()
+                status = (session.status or "").lower()
+                session_id_str = str(session.id)
+                start_time_str = session.start_time.strftime('%d/%m/%Y %H:%M') if session.start_time else ""
+                user_name = getattr(session.user, 'username', '')
+                user_name_lower = user_name.lower() if user_name else ""
+
+                if any(
+                    query in field
+                    for field in [note, status, session_id_str, start_time_str.lower(), user_name_lower]
+                ):
+                    filtered.append(session)
+
+        preferred_id = self.selected_session_id or (self.current_session.id if self.current_session else None)
+        self.populate_sessions_list(filtered, preferred_id=preferred_id)
 
     def update_summary_display(self, session):
         if session:
@@ -1154,9 +1317,16 @@ class UserDashboard(QMainWindow):
                 except Exception:
                     transactions = []
 
-            total_expense = sum(getattr(t, 'amount', 0.0) for t in transactions if getattr(t, 'type', 'expense') == 'expense')
+            expense_transactions = [t for t in transactions if getattr(t, 'type', 'expense') == 'expense']
+            total_expense = sum(getattr(t, 'amount', 0.0) for t in expense_transactions)
+            operations_count = len(expense_transactions)
+
             self.start_balance_card.set_value(f"<b>{session.start_balance:,.2f}</b>")
+            opened_at = session.start_time.strftime('%d/%m/%Y %H:%M') if session.start_time else ""
+            self.start_balance_card.set_caption(f"تم فتح الجلسة: {opened_at}" if opened_at else "جارٍ المتابعة")
+
             self.total_expense_card.set_value(f"<b>{total_expense:,.2f}</b>")
+            self.total_expense_card.set_caption(f"{operations_count} عملية مصروف مسجلة")
 
             # Flexi summary
             flexi_additions = getattr(session, 'flexi_transactions', [])
@@ -1165,39 +1335,68 @@ class UserDashboard(QMainWindow):
                     flexi_additions = self.db_session.query(FlexiTransaction).filter_by(session_id=session.id).all()
                 except Exception:
                     flexi_additions = []
-            
+
             total_flexi_additions = sum(t.amount for t in flexi_additions)
-            
+            flexi_operations = len(flexi_additions)
+
             # Use end_flexi if closed, otherwise calculate from start + additions
             if session.status == 'closed' and session.end_flexi is not None:
                 current_flexi = session.end_flexi
             else:
                 current_flexi = (session.start_flexi or 0.0) + total_flexi_additions
-            
+
             self.current_flexi_card.set_value(f"<b>{current_flexi:,.2f}</b>")
+            self.current_flexi_card.set_caption(f"{flexi_operations} حركة فليكسي")
 
             # -- تعديل --: حساب الفرق النقدي بشكل منفصل
             # هنا يتم حساب الربح الصافي بعد خصم الفليكسي المستهلك
-            cash_difference = session.net_cash_difference if session.end_balance is not None and session.end_flexi is not None else 0
+            if session.end_balance is not None and session.end_flexi is not None:
+                cash_difference = session.net_cash_difference
+            else:
+                cash_difference = (session.start_balance or 0.0) - total_expense
             self.net_profit_card.set_value(f"<b>{cash_difference:+.2f}</b>")
-            
+            self.net_profit_card.set_caption("الجلسة مغلقة" if session.status == 'closed' else "قيد العمل")
+
             # -- تعديل --: حساب الفليكسي المستهلك
             flexi_consumed = session.flexi_consumed if session.end_flexi is not None else 0
             self.flexi_consumed_card.set_value(f"<b>{flexi_consumed:,.2f}</b>")
+            self.flexi_consumed_card.set_caption(
+                "يظهر بالكامل بعد الإغلاق" if session.end_flexi is None else "إجمالي الفليكسي المستهلك"
+            )
 
             # -- إضافة --: حساب الربح الصافي الكلي
             # (الرصيد الفعلي - رصيد البداية - المصاريف) + (إضافات الفليكسي - الفليكسي المستهلك)
-            total_net_profit = (session.end_balance - session.start_balance - session.total_expense) + (session.total_flexi_additions - session.flexi_consumed)
-            self.total_net_profit_card.set_value(f"<b>{total_net_profit:,.2f}</b>")
+            recorded_flexi_additions = getattr(session, 'total_flexi_additions', total_flexi_additions)
+            if session.end_balance is not None:
+                total_net_profit = (
+                    (session.end_balance - (session.start_balance or 0.0) - total_expense)
+                    + (recorded_flexi_additions - flexi_consumed)
+                )
+            else:
+                total_net_profit = (
+                    (session.start_balance or 0.0) - total_expense
+                    + (recorded_flexi_additions - flexi_consumed)
+                )
 
+            self.total_net_profit_card.set_value(f"<b>{total_net_profit:,.2f}</b>")
+            closed_at = session.end_time.strftime('%d/%m/%Y %H:%M') if getattr(session, 'end_time', None) else ""
+            self.total_net_profit_card.set_caption(
+                f"أغلقت في {closed_at}" if closed_at else "يتم التحديث مع إقفال الجلسة"
+            )
 
         else:
             self.start_balance_card.set_value("<b>--</b>")
+            self.start_balance_card.set_caption("")
             self.total_expense_card.set_value("<b>--</b>")
+            self.total_expense_card.set_caption("")
             self.current_flexi_card.set_value("<b>--</b>")
+            self.current_flexi_card.set_caption("")
             self.net_profit_card.set_value("<b>--</b>")
+            self.net_profit_card.set_caption("")
             self.flexi_consumed_card.set_value("<b>--</b>")
+            self.flexi_consumed_card.set_caption("")
             self.total_net_profit_card.set_value("<b>--</b>")
+            self.total_net_profit_card.set_caption("")
 
     def select_session_from_history(self, current_item, previous_item):
         # Fix #3: Selection Indicator - This logic was already correct.
@@ -1210,6 +1409,7 @@ class UserDashboard(QMainWindow):
             if isinstance(current_widget, SessionHistoryItem):
                 current_widget.set_selected_state(True)
             session_id = current_item.data(Qt.ItemDataRole.UserRole)
+            self.selected_session_id = session_id
             # Try to eager-load transactions if SQLAlchemy is available; fallback to simple query for mock session
             try:
                 if joinedload:
@@ -1220,12 +1420,14 @@ class UserDashboard(QMainWindow):
                 selected_session = self.db_session.query(CashSession).filter_by(id=session_id).one()
             self.display_session_details(selected_session)
         else:
+            self.selected_session_id = None
             self.display_session_details(None)
 
     def check_for_open_session(self):
         open_session = self.db_session.query(CashSession).filter_by(user_id=self.user.id, status='open').first()
         if open_session:
             self.current_session = open_session
+            self.selected_session_id = open_session.id
             for i in range(self.sessions_history_list.count()):
                 item = self.sessions_history_list.item(i)
                 if item.data(Qt.ItemDataRole.UserRole) == open_session.id:
