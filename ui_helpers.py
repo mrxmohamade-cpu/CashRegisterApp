@@ -49,8 +49,21 @@ class FlowLayout(QLayout):
             return self._items.pop(index)
         return None
 
-    def expandingDirections(self) -> Qt.Orientations:  # type: ignore[override]
-        return Qt.Orientations(Qt.Orientation(0))
+    def expandingDirections(self):  # type: ignore[override]
+        """Return the layout's expansion behaviour without relying on Qt.Orientations.
+
+        PyQt6 trimmed a handful of QFlags aliases that still exist in PySide6,
+        including ``Qt.Orientations``.  The original implementation used that
+        alias which triggered an ``AttributeError`` when the application was
+        executed with PyQt6.  We detect the availability of the alias at runtime
+        and gracefully fall back to returning ``Qt.Orientation(0)`` – an empty
+        flag value that satisfies QLayout's expectations.
+        """
+
+        orientations_type = getattr(Qt, "Orientations", None)
+        if orientations_type is not None:
+            return orientations_type(Qt.Orientation(0))
+        return Qt.Orientation(0)
 
     def hasHeightForWidth(self) -> bool:  # type: ignore[override]
         return True
