@@ -1668,7 +1668,7 @@ class UserDashboard(QMainWindow):
         if hasattr(self, "session_context_label"):
             self.session_context_label.setText("<br/>".join(context_lines))
 
-        is_current_open = (
+        is_current_open = bool(
             self.current_session
             and session.id == self.current_session.id
             and self.current_session.status == 'open'
