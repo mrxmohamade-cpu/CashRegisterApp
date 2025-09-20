@@ -7,13 +7,15 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QFormLayout, QListWidget, QListWidgetItem, QStackedWidget,
                              QComboBox, QSizePolicy, QStyle, QSplitter, QTextEdit,
                              QCheckBox, QMenu, QDateEdit, QGraphicsDropShadowEffect)
-from PyQt6.QtGui import (QColor, QMouseEvent, QDoubleValidator, QIcon, QFont, 
+from PyQt6.QtGui import (QColor, QMouseEvent, QDoubleValidator, QIcon, QFont,
                          QPainter, QPen, QBrush, QAction)
 from PyQt6.QtCore import Qt, QPoint, QSize, QDate, QRect
 
 # استيراد النماذج وقاعدة البيانات
 from database_setup import User, SessionLocal, CashSession, Transaction, FlexiTransaction, init_db
 from sqlalchemy import extract, func
+
+from ui_helpers import FlowLayout
 
 # --- Custom Bar Chart Widget ---
 class BarChartWidget(QWidget):
@@ -360,10 +362,13 @@ class AdminDashboard(QMainWindow):
         super().__init__()
         self.user = user
         self.db_session = SessionLocal()
+        self.responsive_page_layouts = []
+        self.responsive_flow_layouts = []
+        self._nav_target_width = 240
         self.show_timestamps = False # Default setting
         self.setWindowTitle(f"لوحة تحكم المشرف - مرحباً {self.user.username}")
         self.setGeometry(100, 100, 1400, 850)
-        self.setMinimumSize(1280, 800)
+        self.setMinimumSize(1150, 760)
         
         self.icon_user = self.style().standardIcon(QStyle.StandardPixmap.SP_DesktopIcon) 
         self.icon_report = self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
@@ -380,7 +385,12 @@ class AdminDashboard(QMainWindow):
     def setup_ui(self):
         main_widget = QWidget(); self.setCentralWidget(main_widget)
         main_layout = QHBoxLayout(main_widget); main_layout.setContentsMargins(0, 0, 0, 0); main_layout.setSpacing(0)
-        nav_widget = QWidget(); nav_widget.setObjectName("NavWidget"); nav_widget.setFixedWidth(240)
+        nav_widget = QWidget(); nav_widget.setObjectName("NavWidget")
+        nav_widget.setMinimumWidth(210)
+        nav_widget.setMaximumWidth(360)
+        nav_widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        nav_widget.setFixedWidth(self._nav_target_width)
+        self.nav_widget = nav_widget
         nav_layout = QVBoxLayout(nav_widget); nav_layout.setContentsMargins(10, 10, 10, 10)
         
         # --- NEW: Header with title and settings button ---
@@ -408,7 +418,7 @@ class AdminDashboard(QMainWindow):
 
         nav_layout.addWidget(self.nav_list); nav_layout.addWidget(separator); nav_layout.addWidget(users_title)
         nav_layout.addWidget(self.user_search_input); nav_layout.addWidget(self.user_nav_list)
-        
+
         self.pages = QStackedWidget()
         main_layout.addWidget(nav_widget); main_layout.addWidget(self.pages)
         self.nav_list.currentRowChanged.connect(self.change_main_page)
@@ -421,12 +431,57 @@ class AdminDashboard(QMainWindow):
         self.create_settings_page()           # Index 3
         self.create_user_profile_page()       # Index 4
 
+        self.update_responsive_layouts()
+
+    def _register_page_layout(self, layout):
+        if layout and layout not in self.responsive_page_layouts:
+            self.responsive_page_layouts.append(layout)
+
+    def _register_flow_layout(self, layout):
+        if layout and layout not in self.responsive_flow_layouts:
+            self.responsive_flow_layouts.append(layout)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_responsive_layouts()
+
+    def update_responsive_layouts(self):
+        width = max(self.width(), 1)
+
+        if width < 1280:
+            nav_width = 210
+            margin_h, margin_v = 20, 18
+            spacing = 14
+            flow_spacing = 12
+        elif width < 1550:
+            nav_width = 230
+            margin_h, margin_v = 26, 22
+            spacing = 16
+            flow_spacing = 16
+        else:
+            nav_width = 260
+            margin_h, margin_v = 32, 26
+            spacing = 20
+            flow_spacing = 20
+
+        if nav_width != self._nav_target_width:
+            self.nav_widget.setFixedWidth(nav_width)
+            self._nav_target_width = nav_width
+
+        for layout in self.responsive_page_layouts:
+            layout.setContentsMargins(margin_h, margin_v, margin_h, margin_v)
+            layout.setSpacing(spacing)
+
+        for flow_layout in self.responsive_flow_layouts:
+            flow_layout.setSpacing(flow_spacing)
+
     def create_dashboard_page(self):
         page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(25, 25, 25, 25); layout.setSpacing(20)
-        
+        self._register_page_layout(layout)
+
         header_layout = QHBoxLayout()
         title = QLabel("ملخص الأداء العام"); title.setObjectName("PageTitle")
-        
+
         self.dash_date_filter = QComboBox()
         self.dash_date_filter.addItems(["الشهر الحالي", "الشهر الماضي", "آخر 7 أيام", "آخر 30 يومًا"])
         self.dash_date_filter.currentIndexChanged.connect(self.load_dashboard_data)
@@ -437,10 +492,12 @@ class AdminDashboard(QMainWindow):
         header_layout.addWidget(self.dash_date_filter)
         layout.addLayout(header_layout)
         
-        stats_layout = QHBoxLayout(); stats_layout.setSpacing(20)
+        stats_layout = FlowLayout(spacing=20, alignment=Qt.AlignmentFlag.AlignRight)
+        stats_layout.setContentsMargins(0, 0, 0, 0)
+        self._register_flow_layout(stats_layout)
         self.dash_card_sessions = StatCard("مجموع الجلسات", self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogListView), accent="cyan")
         self.dash_card_expenses = StatCard("مجموع المصاريف", self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowDown), accent="rose")
-        
+
         # NEW: Flexi Additions Card
         self.dash_card_flexi_additions = StatCard("مجموع إضافات الفليكسي", self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowUp), accent="violet")
         
@@ -456,6 +513,7 @@ class AdminDashboard(QMainWindow):
 
     def create_user_management_page(self):
         page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(25, 25, 25, 25); layout.setSpacing(15)
+        self._register_page_layout(layout)
         title = QLabel("إدارة العمال"); title.setObjectName("PageTitle")
         self.add_user_btn = QPushButton("إضافة عامل جديد"); self.add_user_btn.setFixedWidth(180); self.add_user_btn.clicked.connect(self.add_new_user)
         self.users_table = QTableWidget(); self.users_table.setColumnCount(4); self.users_table.setHorizontalHeaderLabels(["ID", "اسم المستخدم", "الدور", "إجراءات"])
@@ -470,6 +528,7 @@ class AdminDashboard(QMainWindow):
 
     def create_sessions_report_page(self):
         page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(25, 25, 25, 25); layout.setSpacing(15)
+        self._register_page_layout(layout)
         
         header_layout = QHBoxLayout()
         title = QLabel("تقرير جميع الجلسات"); title.setObjectName("PageTitle")
@@ -517,6 +576,7 @@ class AdminDashboard(QMainWindow):
         profile_page_layout.addWidget(self.user_profile_placeholder)
         self.user_profile_widget = QWidget()
         self.user_profile_layout = QVBoxLayout(self.user_profile_widget); self.user_profile_layout.setContentsMargins(25, 25, 25, 25); self.user_profile_layout.setSpacing(20)
+        self._register_page_layout(self.user_profile_layout)
         profile_page_layout.addWidget(self.user_profile_widget)
         header_layout = QHBoxLayout()
         self.profile_title = QLabel("ملف العامل"); self.profile_title.setObjectName("PageTitle")
@@ -532,7 +592,9 @@ class AdminDashboard(QMainWindow):
         header_layout.addWidget(QLabel("الشهر:")); header_layout.addWidget(self.month_filter)
         header_layout.addWidget(QLabel("السنة:")); header_layout.addWidget(self.year_filter)
         self.user_profile_layout.addLayout(header_layout)
-        stats_layout = QHBoxLayout(); stats_layout.setSpacing(20)
+        stats_layout = FlowLayout(spacing=20, alignment=Qt.AlignmentFlag.AlignRight)
+        stats_layout.setContentsMargins(0, 0, 0, 0)
+        self._register_flow_layout(stats_layout)
         self.profile_card_sessions = StatCard("عدد الجلسات", self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogListView), accent="cyan")
         self.profile_card_expenses = StatCard("مجموع المصاريف", self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowDown), accent="rose")
         

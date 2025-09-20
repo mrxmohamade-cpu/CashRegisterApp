@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
 from PyQt6.QtGui import QColor, QDoubleValidator, QMouseEvent, QFont, QAction
 from PyQt6.QtCore import Qt, QSize, QPoint, QEvent
 
+from ui_helpers import FlowLayout
+
 
 # Safe stub for AddTransactionDialog to satisfy linters (replace with real dialog in project)
 if "AddTransactionDialog" not in globals():
@@ -372,7 +374,7 @@ class SummaryCard(QFrame):
         self.setProperty("accentColor", accent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.setMinimumWidth(220)
+        self.setMinimumWidth(200)
         self.setMinimumHeight(140)
 
         main_layout = QVBoxLayout(self)
@@ -851,9 +853,13 @@ class UserDashboard(QMainWindow):
         self.all_sessions = []
         self.selected_session_id = None
         self._summary_column_count = None
+        self._current_button_min_width = None
+        self._current_detail_metrics = None
+        self._current_summary_padding = None
+        self._current_action_spacing = None
         self.setWindowTitle(f"نظام إدارة الصندوق - {self.user.username}")
         self.setGeometry(80, 80, 1300, 760)
-        self.setMinimumSize(1100, 650)
+        self.setMinimumSize(1024, 640)
         self.setup_ui()
         self.apply_styles()
         self.load_user_sessions_history()
@@ -867,12 +873,19 @@ class UserDashboard(QMainWindow):
         main_layout.setSpacing(0)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        self.main_splitter = splitter
 
         history_widget = QWidget()
         history_widget.setObjectName("HistoryWidget")
+        history_widget.setMinimumWidth(220)
+        history_widget.setMaximumWidth(420)
+        history_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.history_widget = history_widget
         history_layout = QVBoxLayout(history_widget)
         history_layout.setContentsMargins(0, 0, 0, 0)
         history_layout.setSpacing(0)
+        self.history_layout = history_layout
 
         history_label = QLabel("سجل الجلسات")
         history_label.setObjectName("HistoryTitle")
@@ -899,16 +912,28 @@ class UserDashboard(QMainWindow):
         details_layout = QVBoxLayout(details_widget)
         details_layout.setContentsMargins(30, 20, 30, 20)
         details_layout.setSpacing(20)
+        self.details_layout = details_layout
 
-        top_bar_layout = QHBoxLayout()
+        top_bar_container = QWidget()
+        top_bar_container.setObjectName("TopBar")
+        top_bar_layout = QVBoxLayout(top_bar_container)
+        top_bar_layout.setContentsMargins(0, 0, 0, 0)
+        top_bar_layout.setSpacing(10)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(10)
+        header_row.addStretch()
         welcome_label = QLabel(f"<b>أهلاً بك، {self.user.username}</b>")
         welcome_label.setObjectName("WelcomeLabel")
-        top_bar_layout.addWidget(welcome_label)
-        top_bar_layout.addStretch()
+        welcome_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        welcome_label.setWordWrap(True)
+        header_row.addWidget(welcome_label)
+        top_bar_layout.addLayout(header_row)
 
         self.open_cash_btn = QPushButton(" فتح الصندوق")
         self.add_expense_btn = QPushButton(" إضافة مصروف")
-        
+
         # NEW: Flexi button
         self.add_flexi_btn = QPushButton(" إضافة فليكسي")
         
@@ -923,11 +948,24 @@ class UserDashboard(QMainWindow):
         self.add_flexi_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowUp))
         self.close_cash_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogNoButton))
 
-        for btn in [self.open_cash_btn, self.add_expense_btn, self.add_flexi_btn, self.close_cash_btn]:
+        actions_flow = FlowLayout(spacing=12, alignment=Qt.AlignmentFlag.AlignRight)
+        actions_flow.setContentsMargins(0, 0, 0, 0)
+        self.actions_flow = actions_flow
+        self.action_buttons = [
+            self.open_cash_btn,
+            self.add_expense_btn,
+            self.add_flexi_btn,
+            self.close_cash_btn,
+        ]
+        for btn in self.action_buttons:
             btn.setIconSize(QSize(16, 16))
-            top_bar_layout.addWidget(btn)
+            btn.setMinimumHeight(40)
+            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            actions_flow.addWidget(btn)
 
-        details_layout.addLayout(top_bar_layout)
+        top_bar_layout.addLayout(actions_flow)
+        details_layout.addWidget(top_bar_container)
+        self.top_bar_container = top_bar_container
 
         self.session_context_label = QLabel("اختر جلسة من السجل لعرض تفاصيلها")
         self.session_context_label.setObjectName("SessionContextLabel")
@@ -943,6 +981,7 @@ class UserDashboard(QMainWindow):
         summary_grid.setContentsMargins(20, 20, 20, 20)
         summary_grid.setHorizontalSpacing(22)
         summary_grid.setVerticalSpacing(22)
+        summary_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         self.start_balance_card = SummaryCard("رصيد البداية", QStyle.StandardPixmap.SP_FileDialogStart, accent="emerald")
         self.total_expense_card = SummaryCard("مجموع المصاريف", QStyle.StandardPixmap.SP_ArrowDown, accent="orange")
@@ -968,6 +1007,7 @@ class UserDashboard(QMainWindow):
         details_layout.addWidget(summary_container)
 
         bottom_splitter = QSplitter(Qt.Orientation.Vertical)
+        bottom_splitter.setChildrenCollapsible(False)
 
         tables_container = QWidget()
         tables_container.setObjectName("Container")
@@ -1048,6 +1088,7 @@ class UserDashboard(QMainWindow):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 3)
         splitter.setSizes([360, 940])
+        self.bottom_splitter = bottom_splitter
 
         main_layout.addWidget(splitter)
 
@@ -1058,6 +1099,8 @@ class UserDashboard(QMainWindow):
         self.close_cash_btn.clicked.connect(self.close_cash_session)
         self.save_notes_btn.clicked.connect(self.save_session_notes)
 
+        self.update_responsive_layouts()
+
     def apply_styles(self):
         stylesheet = """
             QMainWindow {
@@ -1067,20 +1110,21 @@ class UserDashboard(QMainWindow):
             #HistoryWidget {
                 background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
                     stop:0 #f8fafc, stop:1 #eef2ff);
-                min-width: 260px;
-                max-width: 520px;
                 border-right: 1px solid rgba(148, 163, 184, 0.25);
             }
             #DetailsWidget { background-color: #eef2ff; }
+            #TopBar {
+                background: transparent;
+            }
             #HistoryTitle {
                 font-size: 16pt;
                 font-weight: 800;
                 color: #0f172a;
-                padding: 22px 22px 10px;
+                padding: 20px 18px 10px;
                 background: transparent;
             }
             #HistorySearch {
-                margin: 0 22px 18px;
+                margin: 0 18px 18px;
                 padding: 12px 18px;
                 border-radius: 16px;
                 border: 1px solid rgba(148, 163, 184, 0.35);
@@ -1360,6 +1404,69 @@ class UserDashboard(QMainWindow):
         preferred_id = self.selected_session_id or (self.current_session.id if self.current_session else None)
         self.populate_sessions_list(filtered, preferred_id=preferred_id)
 
+    def update_responsive_layouts(self):
+        if not getattr(self, "details_layout", None):
+            return
+
+        width = max(self.width(), 1)
+
+        if width < 900:
+            detail_margins = (18, 16, 18, 16)
+            detail_spacing = 16
+            summary_padding = 14
+            summary_spacing = 14
+            action_spacing = 6
+            button_width = 132
+            history_widths = (200, 320)
+        elif width < 1300:
+            detail_margins = (26, 20, 26, 20)
+            detail_spacing = 18
+            summary_padding = 20
+            summary_spacing = 18
+            action_spacing = 10
+            button_width = 146
+            history_widths = (220, 360)
+        elif width < 1650:
+            detail_margins = (34, 22, 34, 22)
+            detail_spacing = 20
+            summary_padding = 24
+            summary_spacing = 22
+            action_spacing = 12
+            button_width = 156
+            history_widths = (230, 400)
+        else:
+            detail_margins = (40, 24, 40, 24)
+            detail_spacing = 22
+            summary_padding = 28
+            summary_spacing = 26
+            action_spacing = 14
+            button_width = 168
+            history_widths = (250, 440)
+
+        if self._current_detail_metrics != (detail_margins, detail_spacing):
+            self.details_layout.setContentsMargins(*detail_margins)
+            self.details_layout.setSpacing(detail_spacing)
+            self._current_detail_metrics = (detail_margins, detail_spacing)
+
+        if self._current_summary_padding != (summary_padding, summary_spacing):
+            self.summary_grid.setContentsMargins(summary_padding, summary_padding, summary_padding, summary_padding)
+            self.summary_grid.setHorizontalSpacing(summary_spacing)
+            self.summary_grid.setVerticalSpacing(summary_spacing)
+            self._current_summary_padding = (summary_padding, summary_spacing)
+
+        if self._current_action_spacing != action_spacing:
+            self.actions_flow.setSpacing(action_spacing)
+            self._current_action_spacing = action_spacing
+
+        if self._current_button_min_width != button_width:
+            for btn in self.action_buttons:
+                btn.setMinimumWidth(button_width)
+            self._current_button_min_width = button_width
+
+        min_width, max_width = history_widths
+        self.history_widget.setMinimumWidth(min_width)
+        self.history_widget.setMaximumWidth(max_width)
+
     def update_summary_grid_layout(self, force=False):
         if not hasattr(self, "summary_grid") or not self.summary_grid:
             return
@@ -1367,12 +1474,14 @@ class UserDashboard(QMainWindow):
             return
 
         container_width = self.summary_container.width() or self.width()
-        if container_width < 640:
+        if container_width < 560:
             columns = 1
-        elif container_width < 1100:
+        elif container_width < 920:
             columns = 2
-        else:
+        elif container_width < 1320:
             columns = 3
+        else:
+            columns = 4
 
         if not force and self._summary_column_count == columns:
             return
@@ -1390,10 +1499,8 @@ class UserDashboard(QMainWindow):
             column = index % columns
             self.summary_grid.addWidget(card, row, column)
 
-        for column in range(columns):
-            self.summary_grid.setColumnStretch(column, 1)
-        for column in range(columns, 4):
-            self.summary_grid.setColumnStretch(column, 0)
+        for column in range(6):
+            self.summary_grid.setColumnStretch(column, 1 if column < columns else 0)
 
     def update_summary_display(self, session):
         if session:
@@ -1853,6 +1960,7 @@ class UserDashboard(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.update_summary_grid_layout()
+        self.update_responsive_layouts()
 
     def eventFilter(self, obj, event):
         if obj is getattr(self, "summary_container", None) and event.type() == QEvent.Type.Resize:
