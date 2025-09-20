@@ -6,9 +6,9 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QLineEdit, QDialogButtonBox, QListWidget,
                              QListWidgetItem, QTextEdit, QSplitter, QHeaderView,
                              QStyle, QFrame, QSizePolicy, QMenu, QFormLayout, QCheckBox,
-                             QGridLayout, QGraphicsDropShadowEffect)
+                             QGridLayout, QGraphicsDropShadowEffect, QScrollArea)
 from PyQt6.QtGui import QColor, QDoubleValidator, QMouseEvent, QFont, QAction
-from PyQt6.QtCore import Qt, QSize, QPoint, QEvent
+from PyQt6.QtCore import Qt, QSize, QPoint, QEvent, QTimer
 
 from ui_helpers import FlowLayout
 
@@ -451,9 +451,9 @@ class SessionHistoryItem(QWidget):
         self.card = QFrame()
         self.card.setObjectName("HistoryCard")
         self.card.setFrameShape(QFrame.Shape.NoFrame)
-        self.card_layout = QHBoxLayout(self.card)
-        self.card_layout.setContentsMargins(8, 8, 8, 8)
-        self.card_layout.setSpacing(12)
+        self.card_layout = QVBoxLayout(self.card)
+        self.card_layout.setContentsMargins(14, 12, 14, 12)
+        self.card_layout.setSpacing(10)
 
         self.card_shadow = QGraphicsDropShadowEffect(self.card)
         self.card_shadow.setOffset(0, 10)
@@ -461,45 +461,31 @@ class SessionHistoryItem(QWidget):
         self.card_shadow.setColor(QColor(15, 23, 42, 60))
         self.card.setGraphicsEffect(self.card_shadow)
 
-        # Left: date/time column
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(12)
+        header_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
         date_time_layout = QVBoxLayout()
         date_time_layout.setSpacing(2)
+        date_time_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.date_label = QLabel(session.start_time.strftime('%d/%m/%Y') if session.start_time else "غير متوفر")
         self.date_label.setObjectName("HistoryItemDate")
         self.date_label.setStyleSheet("font-weight:600;")
+        self.date_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.time_label = QLabel(session.start_time.strftime('%H:%M') if session.start_time else "")
         self.time_label.setObjectName("HistoryItemTime")
         self.time_label.setStyleSheet("color: rgba(0,0,0,0.55); font-size:12px;")
+        self.time_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         date_time_layout.addWidget(self.date_label)
         date_time_layout.addWidget(self.time_label)
-        self.card_layout.addLayout(date_time_layout)
+        header_layout.addLayout(date_time_layout)
 
-        # Middle: notes (stretch)
-        middle_layout = QVBoxLayout()
-        middle_layout.setSpacing(4)
-        middle_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        header_layout.addStretch(1)
 
-        note_text = (session.notes or "").strip()
-        if not note_text:
-            note_text = "لا توجد ملاحظات لهذه الجلسة"
-
-        self.note_label = QLabel(note_text)
-        self.note_label.setObjectName("HistoryItemNote")
-        self.note_label.setStyleSheet("color: #343a40; font-size:14px; font-weight: 500;")
-        self.note_label.setWordWrap(True)
-        self.note_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
-        self.note_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.note_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        middle_layout.addWidget(self.note_label)
-        middle_layout.addStretch(1)
-
-        self.card_layout.addLayout(middle_layout, stretch=1)
-
-
-        # Right: profit and status badges
         right_layout = QVBoxLayout()
         right_layout.setSpacing(6)
-        right_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         # Profit value
         # -- تعديل --: عرض صافي الفرق النقدي فقط في قائمة السجل
@@ -520,7 +506,6 @@ class SessionHistoryItem(QWidget):
         status_text = "مفتوحة" if session.status == 'open' else "مغلقة"
         self.status_badge = QLabel(status_text)
         self.status_badge.setObjectName("StatusBadge")
-        # style depending on status
         if session.status == 'open':
             self.status_badge.setStyleSheet("padding:6px 10px; border-radius:12px; background-color: rgba(25,135,84,0.12); color:#198754; font-weight:600;")
         else:
@@ -529,18 +514,35 @@ class SessionHistoryItem(QWidget):
         right_layout.addWidget(self.profit_label, alignment=Qt.AlignmentFlag.AlignRight)
         right_layout.addWidget(self.status_badge, alignment=Qt.AlignmentFlag.AlignRight)
 
-        # -- إضافة --: عرض الربح الصافي الكلي
+        self.total_profit_label = None
         if session.status == 'closed':
             try:
-                # حساب الربح الصافي الكلي
-                total_net_profit = (session.end_balance - session.start_balance - session.total_expense) + (session.total_flexi_additions - session.flexi_consumed)
-                total_profit_label = QLabel(f"<b>الربح الصافي:</b> {total_net_profit:,.2f}")
-                total_profit_label.setStyleSheet("font-size: 10px; color: #495057;")
-                right_layout.addWidget(total_profit_label, alignment=Qt.AlignmentFlag.AlignRight)
+                total_net_profit = (
+                    (session.end_balance - session.start_balance - session.total_expense)
+                    + (session.total_flexi_additions - session.flexi_consumed)
+                )
+                self.total_profit_label = QLabel(f"<b>الربح الصافي:</b> {total_net_profit:,.2f}")
+                self.total_profit_label.setStyleSheet("font-size: 10px; color: #495057;")
+                self.total_profit_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                right_layout.addWidget(self.total_profit_label, alignment=Qt.AlignmentFlag.AlignRight)
             except Exception:
-                pass
-        
-        self.card_layout.addLayout(right_layout)
+                self.total_profit_label = None
+
+        header_layout.addLayout(right_layout)
+
+        self.card_layout.addLayout(header_layout)
+
+        note_text = (session.notes or "").strip() or "لا توجد ملاحظات لهذه الجلسة"
+        self.note_label = QLabel(note_text)
+        self.note_label.setObjectName("HistoryItemNote")
+        self.note_label.setStyleSheet("color: #343a40; font-size:14px; font-weight: 500;")
+        self.note_label.setWordWrap(True)
+        self.note_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+        self.note_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
+        self.note_label.setMinimumHeight(32)
+        self.note_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.card_layout.addWidget(self.note_label)
+        self.card_layout.addStretch(1)
 
         main_layout.addWidget(self.card)
 
@@ -555,6 +557,20 @@ class SessionHistoryItem(QWidget):
         note_hint = self.note_label.sizeHint()
         height = max(card_hint.height(), note_hint.height() + 32)
         return QSize(card_hint.width() + 16, height + 16)
+
+    def update_card_width(self, available_width: int) -> None:
+        """Force the history card to use the provided width so text never truncates."""
+        if available_width <= 0:
+            return
+
+        # Account for the outer margins that wrap the card inside the QListWidget.
+        effective_width = max(available_width - 16, 220)
+        self.setFixedWidth(available_width)
+        self.card.setFixedWidth(effective_width)
+        self.note_label.setFixedWidth(max(effective_width - 8, 200))
+        self.note_label.adjustSize()
+        self.card.updateGeometry()
+        self.updateGeometry()
 
     def _update_shadow(self, blur_radius: float, alpha: int):
         self.card_shadow.setBlurRadius(blur_radius)
@@ -857,6 +873,8 @@ class UserDashboard(QMainWindow):
         self._current_detail_metrics = None
         self._current_summary_padding = None
         self._current_action_spacing = None
+        self._last_splitter_sizes = None
+        self._current_splitter_orientation = None
         self.setWindowTitle(f"نظام إدارة الصندوق - {self.user.username}")
         self.setGeometry(80, 80, 1300, 760)
         self.setMinimumSize(1024, 640)
@@ -880,6 +898,7 @@ class UserDashboard(QMainWindow):
         history_widget.setObjectName("HistoryWidget")
         history_widget.setMinimumWidth(220)
         history_widget.setMaximumWidth(420)
+        history_widget.setMinimumHeight(240)
         history_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self.history_widget = history_widget
         history_layout = QVBoxLayout(history_widget)
@@ -898,8 +917,9 @@ class UserDashboard(QMainWindow):
 
         self.sessions_history_list = QListWidget()
         self.sessions_history_list.setObjectName("SessionsList")
-        self.sessions_history_list.setSpacing(0)
+        self.sessions_history_list.setSpacing(12)
         self.sessions_history_list.setUniformItemSizes(False)
+        self.sessions_history_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.sessions_history_list.currentItemChanged.connect(self.select_session_from_history)
 
         history_layout.addWidget(history_label)
@@ -907,9 +927,16 @@ class UserDashboard(QMainWindow):
         history_layout.addWidget(self.sessions_history_list)
         splitter.addWidget(history_widget)
 
-        details_widget = QWidget()
-        details_widget.setObjectName("DetailsWidget")
-        details_layout = QVBoxLayout(details_widget)
+        details_scroll = QScrollArea()
+        details_scroll.setObjectName("DetailsScrollArea")
+        details_scroll.setWidgetResizable(True)
+        details_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        details_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        details_container = QWidget()
+        details_container.setObjectName("DetailsContent")
+        details_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        details_layout = QVBoxLayout(details_container)
         details_layout.setContentsMargins(30, 20, 30, 20)
         details_layout.setSpacing(20)
         self.details_layout = details_layout
@@ -1084,10 +1111,14 @@ class UserDashboard(QMainWindow):
         bottom_splitter.setSizes([420, 220])
 
         details_layout.addWidget(bottom_splitter)
-        splitter.addWidget(details_widget)
+        details_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        details_scroll.setWidget(details_container)
+        splitter.addWidget(details_scroll)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 3)
         splitter.setSizes([360, 940])
+        self.details_container = details_container
+        self.details_scroll = details_scroll
         self.bottom_splitter = bottom_splitter
 
         main_layout.addWidget(splitter)
@@ -1100,6 +1131,7 @@ class UserDashboard(QMainWindow):
         self.save_notes_btn.clicked.connect(self.save_session_notes)
 
         self.update_responsive_layouts()
+        self.rebalance_splitter()
 
     def apply_styles(self):
         stylesheet = """
@@ -1112,7 +1144,13 @@ class UserDashboard(QMainWindow):
                     stop:0 #f8fafc, stop:1 #eef2ff);
                 border-right: 1px solid rgba(148, 163, 184, 0.25);
             }
-            #DetailsWidget { background-color: #eef2ff; }
+            QScrollArea#DetailsScrollArea {
+                border: none;
+                background: transparent;
+            }
+            QWidget#DetailsContent {
+                background-color: #eef2ff;
+            }
             #TopBar {
                 background: transparent;
             }
@@ -1185,10 +1223,10 @@ class UserDashboard(QMainWindow):
             QListWidget#SessionsList {
                 border: none;
                 font-size: 13pt;
-                padding: 0 16px 16px;
+                padding: 12px 20px 24px;
                 background: transparent;
             }
-            QListWidget#SessionsList::item { border: none; padding: 6px 0; }
+            QListWidget#SessionsList::item { border: none; padding: 0; }
             QListWidget#SessionsList::item:selected { background-color: transparent; color: black; border: none; }
 
             QWidget#HistoryItem { background-color: transparent; }
@@ -1366,6 +1404,8 @@ class UserDashboard(QMainWindow):
 
         self.sessions_history_list.blockSignals(False)
 
+        QTimer.singleShot(0, self._refresh_history_item_metrics)
+
         if not sessions:
             self.selected_session_id = None
             self.display_session_details(None)
@@ -1404,44 +1444,104 @@ class UserDashboard(QMainWindow):
         preferred_id = self.selected_session_id or (self.current_session.id if self.current_session else None)
         self.populate_sessions_list(filtered, preferred_id=preferred_id)
 
+    def _refresh_history_item_metrics(self):
+        if not getattr(self, "sessions_history_list", None):
+            return
+
+        viewport = self.sessions_history_list.viewport()
+        available_width = viewport.width()
+
+        if available_width <= 0:
+            available_width = self.history_widget.width() - 12
+
+        orientation = self.main_splitter.orientation() if getattr(self, "main_splitter", None) else Qt.Orientation.Horizontal
+
+        if orientation == Qt.Orientation.Horizontal:
+            max_width = self.history_widget.maximumWidth() or available_width
+            available_width = min(max_width, available_width)
+        else:
+            # Allow the cards to stretch wider when the history column stacks on top.
+            available_width = max(available_width, self.width() - 80)
+
+        available_width = max(available_width, self.history_widget.minimumWidth())
+
+        for index in range(self.sessions_history_list.count()):
+            item = self.sessions_history_list.item(index)
+            widget = self.sessions_history_list.itemWidget(item)
+            if not widget:
+                continue
+
+            widget.update_card_width(available_width)
+            hint = widget.sizeHint()
+            item.setSizeHint(QSize(available_width, hint.height()))
+
+        self.sessions_history_list.updateGeometries()
+
     def update_responsive_layouts(self):
         if not getattr(self, "details_layout", None):
             return
 
         width = max(self.width(), 1)
 
-        if width < 900:
-            detail_margins = (18, 16, 18, 16)
+        if width < 780:
+            detail_margins = (18, 14, 18, 14)
             detail_spacing = 16
             summary_padding = 14
-            summary_spacing = 14
+            summary_spacing = 12
             action_spacing = 6
-            button_width = 132
-            history_widths = (200, 320)
-        elif width < 1300:
-            detail_margins = (26, 20, 26, 20)
+            button_width = 130
+            history_widths = (280, max(width, 700))
+            desired_orientation = Qt.Orientation.Vertical
+        elif width < 1180:
+            detail_margins = (24, 18, 24, 18)
             detail_spacing = 18
             summary_padding = 20
-            summary_spacing = 18
-            action_spacing = 10
-            button_width = 146
-            history_widths = (220, 360)
-        elif width < 1650:
-            detail_margins = (34, 22, 34, 22)
+            summary_spacing = 16
+            action_spacing = 8
+            button_width = 142
+            history_widths = (320, max(width, 860))
+            desired_orientation = Qt.Orientation.Vertical
+        elif width < 1480:
+            detail_margins = (30, 20, 30, 20)
             detail_spacing = 20
             summary_padding = 24
+            summary_spacing = 18
+            action_spacing = 10
+            button_width = 150
+            history_widths = (340, 520)
+            desired_orientation = Qt.Orientation.Horizontal
+        elif width < 1800:
+            detail_margins = (34, 22, 34, 22)
+            detail_spacing = 22
+            summary_padding = 26
             summary_spacing = 22
             action_spacing = 12
-            button_width = 156
-            history_widths = (230, 400)
+            button_width = 160
+            history_widths = (360, 560)
+            desired_orientation = Qt.Orientation.Horizontal
         else:
             detail_margins = (40, 24, 40, 24)
-            detail_spacing = 22
-            summary_padding = 28
-            summary_spacing = 26
+            detail_spacing = 24
+            summary_padding = 30
+            summary_spacing = 24
             action_spacing = 14
-            button_width = 168
-            history_widths = (250, 440)
+            button_width = 172
+            history_widths = (380, 640)
+            desired_orientation = Qt.Orientation.Horizontal
+
+        if getattr(self, "_current_splitter_orientation", None) != desired_orientation:
+            self.main_splitter.blockSignals(True)
+            self.main_splitter.setOrientation(desired_orientation)
+            self._current_splitter_orientation = desired_orientation
+            self._last_splitter_sizes = None
+            self.main_splitter.blockSignals(False)
+            QTimer.singleShot(0, self._refresh_history_item_metrics)
+
+        if desired_orientation == Qt.Orientation.Horizontal:
+            self.history_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        else:
+            self.history_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.history_widget.updateGeometry()
 
         if self._current_detail_metrics != (detail_margins, detail_spacing):
             self.details_layout.setContentsMargins(*detail_margins)
@@ -1464,8 +1564,47 @@ class UserDashboard(QMainWindow):
             self._current_button_min_width = button_width
 
         min_width, max_width = history_widths
-        self.history_widget.setMinimumWidth(min_width)
-        self.history_widget.setMaximumWidth(max_width)
+        if (self.history_widget.minimumWidth(), self.history_widget.maximumWidth()) != history_widths:
+            self.history_widget.setMinimumWidth(min_width)
+            self.history_widget.setMaximumWidth(max_width)
+            self._last_splitter_sizes = None
+
+        self.rebalance_splitter()
+
+    def rebalance_splitter(self):
+        if not getattr(self, "main_splitter", None):
+            return
+
+        orientation = self.main_splitter.orientation()
+
+        if orientation == Qt.Orientation.Horizontal:
+            total_width = max(self.main_splitter.size().width(), self.width(), 1)
+            history_min = self.history_widget.minimumWidth()
+            history_max = self.history_widget.maximumWidth()
+
+            if total_width < 1480:
+                history_ratio = 0.40
+            elif total_width < 1800:
+                history_ratio = 0.36
+            else:
+                history_ratio = 0.33
+
+            target_history = int(total_width * history_ratio)
+            target_history = max(history_min, min(history_max, target_history))
+            target_details = max(total_width - target_history, history_min)
+
+            proposed = [target_history, target_details]
+        else:
+            total_height = max(self.main_splitter.size().height(), self.height(), 1)
+            top_min = max(self.history_widget.minimumHeight(), 220)
+            target_history = max(int(total_height * 0.44), top_min)
+            target_details = max(total_height - target_history, 320)
+            proposed = [target_history, target_details]
+
+        if proposed != self._last_splitter_sizes:
+            self.main_splitter.setSizes(proposed)
+            self._last_splitter_sizes = proposed
+            QTimer.singleShot(0, self._refresh_history_item_metrics)
 
     def update_summary_grid_layout(self, force=False):
         if not hasattr(self, "summary_grid") or not self.summary_grid:
@@ -1648,6 +1787,11 @@ class UserDashboard(QMainWindow):
         self.load_flexi_transactions(session)
         self.update_summary_display(session)
         self.notes_editor.setText(session.notes or "")
+        if getattr(self, "details_scroll", None):
+            try:
+                self.details_scroll.verticalScrollBar().setValue(0)
+            except Exception:
+                pass
 
         status_text = "مفتوحة" if session.status == 'open' else "مغلقة"
         start_text = session.start_time.strftime('%d/%m/%Y %H:%M') if session.start_time else "غير محدد"
@@ -1961,6 +2105,7 @@ class UserDashboard(QMainWindow):
         super().resizeEvent(event)
         self.update_summary_grid_layout()
         self.update_responsive_layouts()
+        self._refresh_history_item_metrics()
 
     def eventFilter(self, obj, event):
         if obj is getattr(self, "summary_container", None) and event.type() == QEvent.Type.Resize:

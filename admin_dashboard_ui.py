@@ -6,7 +6,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QDialogButtonBox, QHBoxLayout, QFrame,
                              QFormLayout, QListWidget, QListWidgetItem, QStackedWidget,
                              QComboBox, QSizePolicy, QStyle, QSplitter, QTextEdit,
-                             QCheckBox, QMenu, QDateEdit, QGraphicsDropShadowEffect)
+                             QCheckBox, QMenu, QDateEdit, QGraphicsDropShadowEffect,
+                             QScrollArea)
 from PyQt6.QtGui import (QColor, QMouseEvent, QDoubleValidator, QIcon, QFont,
                          QPainter, QPen, QBrush, QAction)
 from PyQt6.QtCore import Qt, QPoint, QSize, QDate, QRect
@@ -441,6 +442,24 @@ class AdminDashboard(QMainWindow):
         if layout and layout not in self.responsive_flow_layouts:
             self.responsive_flow_layouts.append(layout)
 
+    def _build_scroll_page(self, object_name: str, *, margins=(25, 25, 25, 25), spacing=20):
+        scroll = QScrollArea()
+        scroll.setObjectName(object_name)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        container = QWidget()
+        container.setObjectName(f"{object_name}Content")
+        container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(*margins)
+        layout.setSpacing(spacing)
+
+        scroll.setWidget(container)
+        return scroll, container, layout
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.update_responsive_layouts()
@@ -476,7 +495,7 @@ class AdminDashboard(QMainWindow):
             flow_layout.setSpacing(flow_spacing)
 
     def create_dashboard_page(self):
-        page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(25, 25, 25, 25); layout.setSpacing(20)
+        scroll, container, layout = self._build_scroll_page("DashboardScroll")
         self._register_page_layout(layout)
 
         header_layout = QHBoxLayout()
@@ -509,10 +528,12 @@ class AdminDashboard(QMainWindow):
 
         stats_layout.addWidget(self.dash_card_sessions); stats_layout.addWidget(self.dash_card_expenses); stats_layout.addWidget(self.dash_card_flexi_additions); stats_layout.addWidget(self.dash_card_net_cash); stats_layout.addWidget(self.dash_card_flexi_consumed)
 
-        layout.addLayout(stats_layout); layout.addStretch(); self.pages.addWidget(page)
+        layout.addLayout(stats_layout)
+        layout.addStretch()
+        self.pages.addWidget(scroll)
 
     def create_user_management_page(self):
-        page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(25, 25, 25, 25); layout.setSpacing(15)
+        scroll, container, layout = self._build_scroll_page("UserManagementScroll", margins=(25, 25, 25, 25), spacing=15)
         self._register_page_layout(layout)
         title = QLabel("إدارة العمال"); title.setObjectName("PageTitle")
         self.add_user_btn = QPushButton("إضافة عامل جديد"); self.add_user_btn.setFixedWidth(180); self.add_user_btn.clicked.connect(self.add_new_user)
@@ -523,13 +544,16 @@ class AdminDashboard(QMainWindow):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.users_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(title); layout.addWidget(self.add_user_btn, alignment=Qt.AlignmentFlag.AlignLeft); layout.addWidget(self.users_table)
-        self.pages.addWidget(page)
+
+        layout.addWidget(title)
+        layout.addWidget(self.add_user_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.users_table)
+        self.pages.addWidget(scroll)
 
     def create_sessions_report_page(self):
-        page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(25, 25, 25, 25); layout.setSpacing(15)
+        scroll, container, layout = self._build_scroll_page("SessionsReportScroll", margins=(25, 25, 25, 25), spacing=15)
         self._register_page_layout(layout)
-        
+
         header_layout = QHBoxLayout()
         title = QLabel("تقرير جميع الجلسات"); title.setObjectName("PageTitle")
         header_layout.addWidget(title)
@@ -550,65 +574,81 @@ class AdminDashboard(QMainWindow):
         header_layout.addWidget(self.report_date_start)
         header_layout.addWidget(QLabel("إلى:"))
         header_layout.addWidget(self.report_date_end)
-        
+
         layout.addLayout(header_layout)
 
         self.reports_table = QTableWidget()
         self.reports_table.setSortingEnabled(True)
-        # New columns for Flexi
         self.reports_table.setColumnCount(11)
         self.reports_table.setHorizontalHeaderLabels([
-            "العامل", "وقت الفتح", "وقت الإغلاق", 
-            "رصيد النقد (البداية)", "رصيد النقد (النهاية)", "الفرق (النقد)", 
+            "العامل", "وقت الفتح", "وقت الإغلاق",
+            "رصيد النقد (البداية)", "رصيد النقد (النهاية)", "الفرق (النقد)",
             "رصيد الفليكسي (البداية)", "مجموع الإضافات", "رصيد الفليكسي (النهاية)",
             "الحالة", "إجراءات"
         ])
         header = self.reports_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for i in range(1, 11): header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        for i in range(1, 11):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
         self.reports_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(self.reports_table); self.pages.addWidget(page)
-    
+        layout.addWidget(self.reports_table)
+        self.pages.addWidget(scroll)
+
     def create_user_profile_page(self):
         page = QWidget()
         profile_page_layout = QVBoxLayout(page)
-        self.user_profile_placeholder = QLabel("الرجاء اختيار عامل من القائمة لعرض ملفه الشخصي"); self.user_profile_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter); self.user_profile_placeholder.setObjectName("PlaceholderLabel")
+        profile_page_layout.setContentsMargins(0, 0, 0, 0)
+        profile_page_layout.setSpacing(0)
+
+        self.user_profile_placeholder = QLabel("الرجاء اختيار عامل من القائمة لعرض ملفه الشخصي")
+        self.user_profile_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.user_profile_placeholder.setObjectName("PlaceholderLabel")
         profile_page_layout.addWidget(self.user_profile_placeholder)
-        self.user_profile_widget = QWidget()
-        self.user_profile_layout = QVBoxLayout(self.user_profile_widget); self.user_profile_layout.setContentsMargins(25, 25, 25, 25); self.user_profile_layout.setSpacing(20)
-        self._register_page_layout(self.user_profile_layout)
-        profile_page_layout.addWidget(self.user_profile_widget)
+
+        scroll, profile_container, profile_layout = self._build_scroll_page("UserProfileScroll", margins=(25, 25, 25, 25), spacing=20)
+        self._register_page_layout(profile_layout)
+        self.user_profile_widget = profile_container
+        self.user_profile_layout = profile_layout
+        self.user_profile_scroll = scroll
+        self.user_profile_page = page
+        profile_page_layout.addWidget(scroll)
+
         header_layout = QHBoxLayout()
         self.profile_title = QLabel("ملف العامل"); self.profile_title.setObjectName("PageTitle")
         current_date = QDate.currentDate()
         self.year_filter = QComboBox()
-        for year in range(current_date.year() - 5, current_date.year() + 1): self.year_filter.addItem(str(year))
+        for year in range(current_date.year() - 5, current_date.year() + 1):
+            self.year_filter.addItem(str(year))
         self.year_filter.setCurrentText(str(current_date.year()))
         self.month_filter = QComboBox()
-        for month in range(1, 13): self.month_filter.addItem(QDate(2000, month, 1).toString("MMMM"), month)
+        for month in range(1, 13):
+            self.month_filter.addItem(QDate(2000, month, 1).toString("MMMM"), month)
         self.month_filter.setCurrentIndex(current_date.month() - 1)
-        self.year_filter.currentIndexChanged.connect(self.update_profile_view); self.month_filter.currentIndexChanged.connect(self.update_profile_view)
-        header_layout.addWidget(self.profile_title); header_layout.addStretch()
-        header_layout.addWidget(QLabel("الشهر:")); header_layout.addWidget(self.month_filter)
-        header_layout.addWidget(QLabel("السنة:")); header_layout.addWidget(self.year_filter)
+        self.year_filter.currentIndexChanged.connect(self.update_profile_view)
+        self.month_filter.currentIndexChanged.connect(self.update_profile_view)
+        header_layout.addWidget(self.profile_title)
+        header_layout.addStretch()
+        header_layout.addWidget(QLabel("الشهر:"))
+        header_layout.addWidget(self.month_filter)
+        header_layout.addWidget(QLabel("السنة:"))
+        header_layout.addWidget(self.year_filter)
         self.user_profile_layout.addLayout(header_layout)
+
         stats_layout = FlowLayout(spacing=20, alignment=Qt.AlignmentFlag.AlignRight)
         stats_layout.setContentsMargins(0, 0, 0, 0)
         self._register_flow_layout(stats_layout)
         self.profile_card_sessions = StatCard("عدد الجلسات", self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogListView), accent="cyan")
         self.profile_card_expenses = StatCard("مجموع المصاريف", self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowDown), accent="rose")
-        
-        # NEW: Flexi Additions for user profile
         self.profile_card_flexi_additions = StatCard("مجموع إضافات الفليكسي", self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowUp), accent="violet")
-        
-        # -- تعديل --: بطاقات جديدة لصافي الفرق النقدي والفليكسي المستهلك
         self.profile_card_net_cash = StatCard("صافي الفرق (نقد)", self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowUp), accent="emerald")
         self.profile_card_flexi_consumed = StatCard("الفليكسي المستهلك", self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowDown), accent="orange")
-
-        stats_layout.addWidget(self.profile_card_sessions); stats_layout.addWidget(self.profile_card_expenses); stats_layout.addWidget(self.profile_card_flexi_additions); stats_layout.addWidget(self.profile_card_net_cash); stats_layout.addWidget(self.profile_card_flexi_consumed)
-
+        stats_layout.addWidget(self.profile_card_sessions)
+        stats_layout.addWidget(self.profile_card_expenses)
+        stats_layout.addWidget(self.profile_card_flexi_additions)
+        stats_layout.addWidget(self.profile_card_net_cash)
+        stats_layout.addWidget(self.profile_card_flexi_consumed)
         self.user_profile_layout.addLayout(stats_layout)
-        
+
         splitter = QSplitter(Qt.Orientation.Vertical)
         chart_widget = QWidget()
         chart_layout = QVBoxLayout(chart_widget)
@@ -616,22 +656,23 @@ class AdminDashboard(QMainWindow):
         self.expenses_chart = BarChartWidget()
         chart_layout.addWidget(chart_title)
         chart_layout.addWidget(self.expenses_chart)
-        
+
         sessions_widget = QWidget()
         sessions_layout = QVBoxLayout(sessions_widget)
         sessions_title = QLabel("جلسات العامل للشهر المحدد"); sessions_title.setObjectName("SectionTitle")
-        self.user_sessions_table = QTableWidget(); 
+        self.user_sessions_table = QTableWidget()
         self.user_sessions_table.setColumnCount(10)
         self.user_sessions_table.setHorizontalHeaderLabels([
-            "وقت الفتح", "وقت الإغلاق", 
-            "رصيد النقد (البداية)", "رصيد النقد (النهاية)", "الفرق (النقد)", 
+            "وقت الفتح", "وقت الإغلاق",
+            "رصيد النقد (البداية)", "رصيد النقد (النهاية)", "الفرق (النقد)",
             "رصيد الفليكسي (البداية)", "مجموع الإضافات", "رصيد الفليكسي (النهاية)",
             "الحالة", "إجراءات"
         ])
         header = self.user_sessions_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for i in range(2, 10): header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        for i in range(2, 10):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
         sessions_layout.addWidget(sessions_title)
         sessions_layout.addWidget(self.user_sessions_table)
 
@@ -639,191 +680,88 @@ class AdminDashboard(QMainWindow):
         splitter.addWidget(sessions_widget)
         splitter.setSizes([250, 400])
         self.user_profile_layout.addWidget(splitter)
-        
+
         self.pages.addWidget(page)
         self.user_profile_widget.hide()
-        
+
     def create_settings_page(self):
-        page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(25, 25, 25, 25); layout.setSpacing(15)
+        scroll, container, layout = self._build_scroll_page("SettingsScroll", margins=(25, 25, 25, 25), spacing=18)
+        self._register_page_layout(layout)
         title = QLabel("الإعدادات"); title.setObjectName("PageTitle")
         self.timestamps_checkbox = QCheckBox("إظهار وقت الفتح والإغلاق في الجداول")
         self.timestamps_checkbox.setChecked(self.show_timestamps)
         self.timestamps_checkbox.stateChanged.connect(self.toggle_timestamp_visibility)
-        layout.addWidget(title); layout.addWidget(self.timestamps_checkbox); layout.addStretch()
-        self.pages.addWidget(page)
+        layout.addWidget(title)
+        layout.addWidget(self.timestamps_checkbox)
+        layout.addStretch()
+        self.pages.addWidget(scroll)
 
     def apply_styles(self):
         self.setStyleSheet("""
-            QMainWindow { background-color: #e8ecf7; font-family: 'Segoe UI', 'Cairo', sans-serif; }
-            QWidget#NavWidget {
-                background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #1f2937, stop:1 #0f172a);
-                border-right: none;
-                color: #e2e8f0;
-                padding-top: 12px;
-            }
-            QLabel#NavTitle { font-size: 18pt; font-weight: 800; color: #f8fafc; padding: 8px 4px; }
-            QLabel#NavGroupTitle {
-                font-size: 10.5pt;
-                font-weight: 600;
-                color: rgba(226, 232, 240, 0.7);
-                padding: 18px 6px 10px;
-                border-top: 1px solid rgba(148, 163, 184, 0.25);
-                margin-top: 12px;
-            }
-            QFrame#NavSeparator { background-color: rgba(148, 163, 184, 0.25); height: 1px; }
-            QListWidget#NavList, QListWidget#UserNavList {
-                border: none;
-                background: transparent;
-                color: #e2e8f0;
-            }
-            QListWidget#NavList::item, QListWidget#UserNavList::item {
-                color: #e2e8f0;
-                padding: 12px 18px;
-                border-radius: 12px;
-                margin: 2px 0;
-            }
-            QListWidget#NavList::item:hover, QListWidget#UserNavList::item:hover {
-                background-color: rgba(59, 130, 246, 0.28);
-            }
-            QListWidget#NavList::item:selected, QListWidget#UserNavList::item:selected {
-                background-color: rgba(37, 99, 235, 0.7);
-                color: #ffffff;
-            }
 
-            /* Main Window Inputs */
-            QLineEdit, QComboBox, QDateEdit {
-                border: 1px solid rgba(148, 163, 184, 0.35);
-                border-radius: 12px;
-                padding: 10px 14px;
-                font-size: 11pt;
-                background-color: #ffffff;
-                color: #0f172a;
-            }
-            QLineEdit:focus, QComboBox:focus, QDateEdit:focus {
-                border: 2px solid #2563eb;
-                padding: 9px 13px;
-                background-color: #ffffff;
-            }
-            QLineEdit#UserSearch {
-                background-color: rgba(15, 23, 42, 0.35);
-                color: #f8fafc;
-                border: 1px solid rgba(148, 163, 184, 0.4);
-                margin: 6px 0;
-            }
-            QLineEdit#UserSearch::placeholder { color: rgba(226, 232, 240, 0.65); }
-            QCheckBox { color: #475569; font-size: 10.5pt; }
-            QComboBox::drop-down { border: none; }
+QMainWindow { background-color: #f4f7fc; font-family: 'Segoe UI', Arial; }
+QWidget#NavWidget { background-color: #ffffff; border-right: 1px solid #dee2e6; }
+QLabel#NavTitle { font-size: 16pt; font-weight: bold; color: #343a40; padding: 10px 0; }
+QLabel#NavGroupTitle { font-size: 10pt; font-weight: bold; color: #6c757d; padding: 10px 5px 5px 5px; border-top: 1px solid #e9ecef; margin-top: 10px; }
+QListWidget { border: none; background-color: transparent; }
+QListWidget::item { color: #495057; padding: 12px 15px; border-radius: 6px; }
+QListWidget::item:hover { background-color: #e9ecef; }
+QListWidget::item:selected { background-color: #0d6efd; color: white; }
 
-            QLabel#PageTitle { font-size: 20pt; font-weight: 800; color: #0f172a; margin-bottom: 18px; }
-            QLabel#SectionTitle { font-size: 12.5pt; font-weight: 700; color: #1f2937; margin: 18px 0 8px; }
-            QLabel#PlaceholderLabel { font-size: 14pt; color: #94a3b8; }
+/* Main Window Inputs */
+QLineEdit, QComboBox, QDateEdit { border: 1px solid #ced4da; border-radius: 6px; padding: 8px; font-size: 10pt; background-color: #ffffff; color: #212529; }
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus { border-color: #86b7fe; }
+QCheckBox { color: #495057; }
+QComboBox::drop-down { border: none; }
 
-            QTableWidget {
-                font-size: 11pt;
-                border: none;
-                background-color: #ffffff;
-                gridline-color: #e2e8f0;
-                color: #0f172a;
-                border-radius: 16px;
-            }
-            QTableWidget::item { padding: 12px 10px; }
-            QTableWidget::item:selected { background-color: #dbeafe; color: #1e3a8a; }
-            QHeaderView::section {
-                background-color: #f1f5f9;
-                color: #475569;
-                padding: 14px 12px;
-                font-size: 10.5pt;
-                font-weight: 700;
-                border-bottom: 1px solid rgba(148, 163, 184, 0.3);
-                border-right: none;
-            }
+QLabel#PageTitle { font-size: 18pt; font-weight: bold; color: #212529; margin-bottom: 15px; }
+QLabel#SectionTitle { font-size: 12pt; font-weight: bold; color: #495057; margin: 15px 0 5px 0; }
+QLabel#PlaceholderLabel { font-size: 14pt; color: #6c757d; }
 
-            QPushButton {
-                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #2563eb, stop:1 #1d4ed8);
-                color: #ffffff;
-                font-size: 10.5pt;
-                font-weight: 700;
-                padding: 12px 22px;
-                border-radius: 14px;
-                border: none;
-            }
-            QPushButton:hover { background: #1e3a8a; }
+QScrollArea#DashboardScroll,
+QScrollArea#UserManagementScroll,
+QScrollArea#SessionsReportScroll,
+QScrollArea#SettingsScroll,
+QScrollArea#UserProfileScroll {
+    border: none;
+    background: transparent;
+}
 
-            QPushButton#SettingsButton {
-                background-color: rgba(255,255,255,0.08);
-                border-radius: 12px;
-                padding: 6px;
-                max-width: 36px;
-            }
-            QPushButton#SettingsButton:hover { background-color: rgba(59, 130, 246, 0.25); }
+QTableWidget { font-size: 11pt; border: 1px solid #dee2e6; background-color: #ffffff; gridline-color: #e9ecef; color: #212529; }
+QHeaderView::section { background-color: #f8f9fa; color: #495057; padding: 12px; font-size: 10pt; font-weight: bold; border-bottom: 1px solid #dee2e6; border-right: none; }
 
-            .ActionButton {
-                font-size: 9.5pt;
-                padding: 6px 10px;
-                color: white;
-                border-radius: 10px;
-            }
-            .DetailsButton { background-color: #22c55e; }
-            .DetailsButton:hover { background-color: #16a34a; }
-            .EditButton { background-color: #2563eb; }
-            .EditButton:hover { background-color: #1d4ed8; }
-            .DeleteButton { background-color: #ef4444; }
-            .DeleteButton:hover { background-color: #dc2626; }
-            .ActionButton:disabled, QPushButton:disabled { background-color: rgba(148, 163, 184, 0.4); color: #94a3b8; }
+QPushButton { background-color: #0d6efd; color: white; font-size: 10pt; font-weight: bold; padding: 10px 18px; border-radius: 6px; border: none; }
+QPushButton:hover { background-color: #0b5ed7; }
 
-            QFrame#StatCard {
-                background-color: #ffffff;
-                border-radius: 24px;
-                border: 1px solid rgba(148, 163, 184, 0.25);
-            }
-            QLabel#StatCardIcon {
-                background-color: rgba(37, 99, 235, 0.12);
-                border-radius: 16px;
-                color: #1d4ed8;
-                padding: 8px;
-            }
-            QLabel#StatCardTitle { font-size: 12pt; font-weight: 700; color: #64748b; }
-            QLabel#StatCardValue { font-size: 28pt; font-weight: 800; color: #0f172a; }
-            QLabel#StatCardCaption { font-size: 10pt; color: #64748b; }
+QPushButton#SettingsButton { background-color: transparent; border: none; padding: 5px; max-width: 30px; }
+QPushButton#SettingsButton:hover { background-color: #e9ecef; }
 
-            QFrame#StatCard[accentColor="cyan"] QLabel#StatCardIcon { background-color: rgba(14,165,233,0.2); color: #0e7490; }
-            QFrame#StatCard[accentColor="cyan"] QLabel#StatCardValue { color: #0e7490; }
-            QFrame#StatCard[accentColor="rose"] QLabel#StatCardIcon { background-color: rgba(244,114,182,0.2); color: #be123c; }
-            QFrame#StatCard[accentColor="rose"] QLabel#StatCardValue { color: #be123c; }
-            QFrame#StatCard[accentColor="violet"] QLabel#StatCardIcon { background-color: rgba(139,92,246,0.18); color: #7c3aed; }
-            QFrame#StatCard[accentColor="violet"] QLabel#StatCardValue { color: #7c3aed; }
-            QFrame#StatCard[accentColor="emerald"] QLabel#StatCardIcon { background-color: rgba(34,197,94,0.18); color: #047857; }
-            QFrame#StatCard[accentColor="emerald"] QLabel#StatCardValue { color: #047857; }
-            QFrame#StatCard[accentColor="orange"] QLabel#StatCardIcon { background-color: rgba(249,115,22,0.2); color: #c2410c; }
-            QFrame#StatCard[accentColor="orange"] QLabel#StatCardValue { color: #c2410c; }
+.ActionButton { font-size: 9pt; padding: 5px 8px; color: white; }
+.DetailsButton { background-color: #198754; } .DetailsButton:hover { background-color: #157347; }
+.EditButton { background-color: #0d6efd; } .EditButton:hover { background-color: #0b5ed7; }
+.DeleteButton { background-color: #dc3545; } .DeleteButton:hover { background-color: #bb2d3b; }
+.ActionButton:disabled, QPushButton:disabled { background-color: #adb5bd; color: #6c757d; }
 
-            #ChartToolTip { background-color: rgba(15, 23, 42, 0.9); color: white; border: none; padding: 6px 10px; border-radius: 6px; }
+#StatCard { background-color: #ffffff; border-radius: 8px; border: 1px solid #dee2e6; }
+#StatCardTitle { font-size: 11pt; color: #6c757d; }
+#StatCardValue { font-size: 24pt; font-weight: bold; color: #212529; }
 
-            /* Dialog Styles */
-            QDialog QLineEdit, QDialog QTextEdit, QDialog QComboBox {
-                background-color: #ffffff; color: #0f172a; border: 1px solid rgba(148, 163, 184, 0.35);
-                border-radius: 10px; padding: 10px; font-size: 11pt;
-            }
-            QDialog QLineEdit:focus, QDialog QTextEdit:focus { border-color: #2563eb; }
-            QDialog QLabel { color: #475569; font-size: 11pt; }
+#ChartToolTip { background-color: #212529; color: white; border: none; padding: 5px; border-radius: 4px; }
 
-            #CustomDialogFrame { background-color: #ffffff; border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 16px; }
-            #CustomTitleBar { background-color: #f1f5f9; border-top-left-radius: 15px; border-top-right-radius: 15px; border-bottom: 1px solid rgba(148, 163, 184, 0.25); }
-            #CustomTitleLabel { font-size: 11pt; font-weight: bold; color: #0f172a; }
-            #CustomCloseButton { background-color: transparent; color: #64748b; border: none; font-size: 14pt; font-weight: bold; border-radius: 6px; }
-            #CustomCloseButton:hover { background-color: #ef4444; color: white; }
+/* Dialog Styles */
+QDialog QLineEdit, QDialog QTextEdit, QDialog QComboBox {
+    background-color: #ffffff; color: #212529; border: 1px solid #ced4da;
+    border-radius: 6px; padding: 10px; font-size: 11pt;
+}
+QDialog QLineEdit:focus, QDialog QTextEdit:focus { border-color: #86b7fe; }
+QDialog QLabel { color: #495057; font-size: 11pt; }
+
+#CustomDialogFrame { background-color: #ffffff; border: 1px solid rgba(0,0,0,0.1); border-radius: 12px; }
+#CustomTitleBar { background-color: #f8f9fa; border-top-left-radius: 11px; border-top-right-radius: 11px; border-bottom: 1px solid #e9ecef; }
+#CustomTitleLabel { font-size: 11pt; font-weight: bold; color: #212529; }
+#CustomCloseButton { background-color: transparent; color: #6c757d; border: none; font-size: 14pt; font-weight: bold; border-radius: 4px; }
+#CustomCloseButton:hover { background-color: #dc3545; color: white; }
         """)
-
-    def toggle_timestamp_visibility(self, state):
-        self.show_timestamps = bool(state)
-        # Main report table
-        self.reports_table.setColumnHidden(1, not self.show_timestamps)
-        self.reports_table.setColumnHidden(2, not self.show_timestamps)
-        # User profile sessions table
-        self.user_sessions_table.setColumnHidden(0, not self.show_timestamps)
-        self.user_sessions_table.setColumnHidden(1, not self.show_timestamps)
 
     def load_dashboard_data(self):
         today = datetime.date.today()
@@ -950,15 +888,18 @@ class AdminDashboard(QMainWindow):
             elif index == 2: self.load_sessions_report()
             
             # Ensure profile page is hidden
-            if self.pages.widget(4) is self.user_profile_widget.parent():
-                 self.user_profile_placeholder.show(); self.user_profile_widget.hide()
+            if self.pages.widget(4) is getattr(self, 'user_profile_page', None):
+                self.user_profile_placeholder.show()
+                self.user_profile_widget.hide()
 
 
     def show_settings_page(self):
         self.nav_list.clearSelection()
         self.user_nav_list.clearSelection()
         self.pages.setCurrentIndex(3) # Index of settings page is now 3
-        self.user_profile_placeholder.show(); self.user_profile_widget.hide()
+        if hasattr(self, 'user_profile_placeholder') and hasattr(self, 'user_profile_widget'):
+            self.user_profile_placeholder.show()
+            self.user_profile_widget.hide()
 
 
     def select_user_profile(self, item):
@@ -968,7 +909,10 @@ class AdminDashboard(QMainWindow):
         if self.current_selected_user:
             self.pages.setCurrentIndex(4) # The profile page is index 4
             self.update_profile_view()
-            self.user_profile_placeholder.hide(); self.user_profile_widget.show()
+            if hasattr(self, 'user_profile_placeholder'):
+                self.user_profile_placeholder.hide()
+            if hasattr(self, 'user_profile_widget'):
+                self.user_profile_widget.show()
 
     def update_profile_view(self):
         if hasattr(self, 'current_selected_user') and self.current_selected_user:
