@@ -1,6 +1,7 @@
 import sys
 import datetime
 from datetime import timezone
+from typing import Optional
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QPushButton, QTableWidget, QTableWidgetItem, QDialog,
                              QLineEdit, QDialogButtonBox, QListWidget,
@@ -10,7 +11,20 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QComboBox, QToolButton)
 from PyQt6.QtGui import QColor, QDoubleValidator, QMouseEvent, QFont, QAction, QPainter
 from PyQt6.QtCore import Qt, QSize, QPoint, QEvent, QTimer, QDateTime, pyqtSignal
-from PyQt6.QtCharts import QChart, QChartView, QLineSeries, QPieSeries, QDateTimeAxis, QValueAxis
+
+try:
+    from PyQt6.QtCharts import (
+        QChart,
+        QChartView,
+        QLineSeries,
+        QPieSeries,
+        QDateTimeAxis,
+        QValueAxis,
+    )
+    QTCHARTS_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dependency
+    QChart = QChartView = QLineSeries = QPieSeries = QDateTimeAxis = QValueAxis = None  # type: ignore
+    QTCHARTS_AVAILABLE = False
 
 from ui_helpers import FlowLayout
 
@@ -1077,17 +1091,30 @@ class UserDashboard(QMainWindow):
         analytics_layout.setContentsMargins(24, 24, 24, 24)
         analytics_layout.setSpacing(18)
 
-        self.revenue_chart_view = QChartView()
-        self.revenue_chart_view.setObjectName("AnalyticsChart")
-        self.revenue_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        self.revenue_chart_view.setMinimumHeight(260)
-        analytics_layout.addWidget(self.revenue_chart_view, 2)
+        if QTCHARTS_AVAILABLE:
+            self.revenue_chart_view = QChartView()
+            self.revenue_chart_view.setObjectName("AnalyticsChart")
+            self.revenue_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            self.revenue_chart_view.setMinimumHeight(260)
+            analytics_layout.addWidget(self.revenue_chart_view, 2)
 
-        self.breakdown_chart_view = QChartView()
-        self.breakdown_chart_view.setObjectName("AnalyticsChart")
-        self.breakdown_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        self.breakdown_chart_view.setMinimumHeight(260)
-        analytics_layout.addWidget(self.breakdown_chart_view, 1)
+            self.breakdown_chart_view = QChartView()
+            self.breakdown_chart_view.setObjectName("AnalyticsChart")
+            self.breakdown_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            self.breakdown_chart_view.setMinimumHeight(260)
+            analytics_layout.addWidget(self.breakdown_chart_view, 1)
+        else:
+            placeholder = self._create_chart_placeholder(
+                "الرسوم البيانية غير مفعّلة",
+                "الرجاء تثبيت الحزمة PyQt6-Charts لعرض تحليلات الأرباح والمصاريف.",
+            )
+            analytics_layout.addWidget(placeholder, 1)
+
+            secondary_placeholder = self._create_chart_placeholder(
+                "—",
+                "سيتم عرض توزيع الأرباح والمصاريف هنا بعد تثبيت الدعم الرسومي.",
+            )
+            analytics_layout.addWidget(secondary_placeholder, 1)
 
         details_layout.addWidget(analytics_container)
 
@@ -1557,6 +1584,8 @@ class UserDashboard(QMainWindow):
         self.refresh_analytics_charts()
 
     def refresh_analytics_charts(self):
+        if not QTCHARTS_AVAILABLE:
+            return
         if not self.revenue_chart_view or not self.breakdown_chart_view:
             return
 
@@ -1650,7 +1679,37 @@ class UserDashboard(QMainWindow):
         self._apply_chart_palette(breakdown_chart)
         self.breakdown_chart_view.setChart(breakdown_chart)
 
-    def _apply_chart_palette(self, chart: QChart):
+    def _create_chart_placeholder(self, title: str, description: str) -> QFrame:
+        placeholder = QFrame()
+        placeholder.setObjectName("ChartPlaceholder")
+
+        layout = QVBoxLayout(placeholder)
+        layout.setContentsMargins(16, 18, 16, 18)
+        layout.setSpacing(10)
+
+        icon_label = QLabel("📊")
+        icon_label.setObjectName("PlaceholderIcon")
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        title_label = QLabel(title)
+        title_label.setObjectName("PlaceholderTitle")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setWordWrap(True)
+
+        description_label = QLabel(description)
+        description_label.setObjectName("PlaceholderDescription")
+        description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        description_label.setWordWrap(True)
+
+        layout.addWidget(icon_label)
+        layout.addWidget(title_label)
+        layout.addWidget(description_label)
+
+        return placeholder
+
+    def _apply_chart_palette(self, chart: Optional[QChart]):
+        if not QTCHARTS_AVAILABLE or chart is None:
+            return
         title_color = QColor("#f8fafc") if self.dark_mode else QColor("#0f172a")
         text_color = QColor("#e2e8f0") if self.dark_mode else QColor("#475569")
         chart.setTitleBrush(title_color)
@@ -1769,6 +1828,24 @@ class UserDashboard(QMainWindow):
                 border: 1px solid {palette['border']};
                 border-radius: 18px;
                 background-color: {palette['surface']};
+            }}
+            QFrame#ChartPlaceholder {{
+                border: 1px dashed {palette['border']};
+                border-radius: 20px;
+                background-color: {palette['surface']};
+                padding: 12px;
+            }}
+            QFrame#ChartPlaceholder QLabel#PlaceholderIcon {{
+                font-size: 28pt;
+            }}
+            QFrame#ChartPlaceholder QLabel#PlaceholderTitle {{
+                font-size: 12.5pt;
+                font-weight: 700;
+                color: {palette['text_primary']};
+            }}
+            QFrame#ChartPlaceholder QLabel#PlaceholderDescription {{
+                font-size: 11pt;
+                color: {palette['text_muted']};
             }}
             QLabel#HistoryItemDate {{
                 font-size: 12pt;
