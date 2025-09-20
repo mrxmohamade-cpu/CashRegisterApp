@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QStyle, QFrame, QSizePolicy, QMenu, QFormLayout, QCheckBox,
                              QGridLayout, QGraphicsDropShadowEffect)
 from PyQt6.QtGui import QColor, QDoubleValidator, QMouseEvent, QFont, QAction
-from PyQt6.QtCore import Qt, QSize, QPoint
+from PyQt6.QtCore import Qt, QSize, QPoint, QEvent
 
 
 # Safe stub for AddTransactionDialog to satisfy linters (replace with real dialog in project)
@@ -477,18 +477,19 @@ class SessionHistoryItem(QWidget):
         middle_layout.setSpacing(4)
         middle_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
-        # -- التعديل --: تم حذف عنوان "تفاصيل الجلسة" والتركيز على الملاحظات
-        note_preview = (session.notes or "").strip()
-        if not note_preview:
-            note_preview = "لا توجد ملاحظات لهذه الجلسة"
-        elif len(note_preview) > 80:
-            note_preview = note_preview[:77] + "..."
-        
-        self.note_label = QLabel(note_preview)
+        note_text = (session.notes or "").strip()
+        if not note_text:
+            note_text = "لا توجد ملاحظات لهذه الجلسة"
+
+        self.note_label = QLabel(note_text)
         self.note_label.setObjectName("HistoryItemNote")
-        # Making the note label more prominent
-        self.note_label.setStyleSheet("color: #343a40; font-size:14px; font-weight: 500;") 
+        self.note_label.setStyleSheet("color: #343a40; font-size:14px; font-weight: 500;")
+        self.note_label.setWordWrap(True)
+        self.note_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+        self.note_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.note_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         middle_layout.addWidget(self.note_label)
+        middle_layout.addStretch(1)
 
         self.card_layout.addLayout(middle_layout, stretch=1)
 
@@ -546,6 +547,12 @@ class SessionHistoryItem(QWidget):
 
         # default unselected style
         self.set_selected_state(False)
+
+    def sizeHint(self):
+        card_hint = self.card.sizeHint()
+        note_hint = self.note_label.sizeHint()
+        height = max(card_hint.height(), note_hint.height() + 32)
+        return QSize(card_hint.width() + 16, height + 16)
 
     def _update_shadow(self, blur_radius: float, alpha: int):
         self.card_shadow.setBlurRadius(blur_radius)
@@ -843,6 +850,7 @@ class UserDashboard(QMainWindow):
         self.current_session = None
         self.all_sessions = []
         self.selected_session_id = None
+        self._summary_column_count = None
         self.setWindowTitle(f"نظام إدارة الصندوق - {self.user.username}")
         self.setGeometry(80, 80, 1300, 760)
         self.setMinimumSize(1100, 650)
@@ -921,8 +929,16 @@ class UserDashboard(QMainWindow):
 
         details_layout.addLayout(top_bar_layout)
 
+        self.session_context_label = QLabel("اختر جلسة من السجل لعرض تفاصيلها")
+        self.session_context_label.setObjectName("SessionContextLabel")
+        self.session_context_label.setWordWrap(True)
+        self.session_context_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+        self.session_context_label.setTextFormat(Qt.TextFormat.RichText)
+        details_layout.addWidget(self.session_context_label)
+
         summary_container = QFrame()
         summary_container.setObjectName("SummaryContainer")
+        summary_container.installEventFilter(self)
         summary_grid = QGridLayout(summary_container)
         summary_grid.setContentsMargins(20, 20, 20, 20)
         summary_grid.setHorizontalSpacing(22)
@@ -944,10 +960,10 @@ class UserDashboard(QMainWindow):
             self.total_net_profit_card,
         ]
 
-        for index, card in enumerate(summary_cards):
-            row = index // 3
-            column = index % 3
-            summary_grid.addWidget(card, row, column)
+        self.summary_container = summary_container
+        self.summary_grid = summary_grid
+        self.summary_cards = summary_cards
+        self.update_summary_grid_layout(force=True)
 
         details_layout.addWidget(summary_container)
 
@@ -1051,7 +1067,7 @@ class UserDashboard(QMainWindow):
             #HistoryWidget {
                 background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
                     stop:0 #f8fafc, stop:1 #eef2ff);
-                min-width: 320px;
+                min-width: 260px;
                 max-width: 520px;
                 border-right: 1px solid rgba(148, 163, 184, 0.25);
             }
@@ -1081,6 +1097,17 @@ class UserDashboard(QMainWindow):
                 color: rgba(100, 116, 139, 0.75);
             }
             #WelcomeLabel { font-size: 18pt; font-weight: 800; color: #0f172a; margin-bottom: 10px; }
+            #SessionContextLabel {
+                background: rgba(255, 255, 255, 0.86);
+                border-radius: 20px;
+                padding: 16px 22px;
+                font-size: 11.5pt;
+                color: #1e293b;
+                border: 1px solid rgba(148, 163, 184, 0.25);
+                margin-bottom: 8px;
+            }
+            #SessionContextLabel b { color: #0f172a; }
+            #SessionContextLabel span { font-weight: 600; }
 
             /* --- Custom Dialog Styles --- */
             QDialog { background-color: transparent; }
@@ -1289,6 +1316,7 @@ class UserDashboard(QMainWindow):
             list_item = QListWidgetItem(self.sessions_history_list)
             list_item.setData(Qt.ItemDataRole.UserRole, session.id)
             item_widget = SessionHistoryItem(session)
+            item_widget.adjustSize()
             list_item.setSizeHint(item_widget.sizeHint())
             self.sessions_history_list.setItemWidget(list_item, item_widget)
 
@@ -1331,6 +1359,41 @@ class UserDashboard(QMainWindow):
 
         preferred_id = self.selected_session_id or (self.current_session.id if self.current_session else None)
         self.populate_sessions_list(filtered, preferred_id=preferred_id)
+
+    def update_summary_grid_layout(self, force=False):
+        if not hasattr(self, "summary_grid") or not self.summary_grid:
+            return
+        if not getattr(self, "summary_cards", None):
+            return
+
+        container_width = self.summary_container.width() or self.width()
+        if container_width < 640:
+            columns = 1
+        elif container_width < 1100:
+            columns = 2
+        else:
+            columns = 3
+
+        if not force and self._summary_column_count == columns:
+            return
+
+        self._summary_column_count = columns
+
+        while self.summary_grid.count():
+            item = self.summary_grid.takeAt(0)
+            widget = item.widget()
+            if widget and widget not in self.summary_cards:
+                widget.setParent(None)
+
+        for index, card in enumerate(self.summary_cards):
+            row = index // columns
+            column = index % columns
+            self.summary_grid.addWidget(card, row, column)
+
+        for column in range(columns):
+            self.summary_grid.setColumnStretch(column, 1)
+        for column in range(columns, 4):
+            self.summary_grid.setColumnStretch(column, 0)
 
     def update_summary_display(self, session):
         if session:
@@ -1463,16 +1526,6 @@ class UserDashboard(QMainWindow):
         self.update_ui_for_session_status()
 
     def display_session_details(self, session):
-        if self.current_session and session and self.current_session.id != session.id:
-             if self.current_session.status == 'open':
-                CustomMessageBox.show_warning(self, "تنبيه", "يجب عليك إغلاق الجلسة المفتوحة حاليًا قبل عرض تفاصيل جلسة أخرى.")
-                for i in range(self.sessions_history_list.count()):
-                    item = self.sessions_history_list.item(i)
-                    if item.data(Qt.ItemDataRole.UserRole) == self.current_session.id:
-                        self.sessions_history_list.setCurrentRow(i)
-                        break
-                return
-
         if session is None:
             self.load_transactions(None)
             self.load_flexi_transactions(None)
@@ -1480,15 +1533,41 @@ class UserDashboard(QMainWindow):
             self.notes_editor.clear()
             self.notes_editor.setReadOnly(True)
             self.save_notes_btn.setEnabled(False)
+            if hasattr(self, "session_context_label"):
+                self.session_context_label.setText("اختر جلسة من السجل لعرض تفاصيلها.")
             return
 
         self.load_transactions(session)
         self.load_flexi_transactions(session)
         self.update_summary_display(session)
         self.notes_editor.setText(session.notes or "")
-        is_open = session.status == 'open'
-        self.notes_editor.setReadOnly(not is_open)
-        self.save_notes_btn.setEnabled(is_open)
+
+        status_text = "مفتوحة" if session.status == 'open' else "مغلقة"
+        start_text = session.start_time.strftime('%d/%m/%Y %H:%M') if session.start_time else "غير محدد"
+        end_text = session.end_time.strftime('%d/%m/%Y %H:%M') if getattr(session, 'end_time', None) else ""
+        owner_name = getattr(session.user, 'username', None) or self.user.username
+
+        context_lines = [
+            f"<b>جلسة رقم {session.id}</b> — الحالة: {status_text}",
+            f"بدأت في {start_text}" + (f" • أغلقت في {end_text}" if end_text else ""),
+            f"المسؤول: {owner_name}",
+        ]
+
+        if self.current_session and self.current_session.status == 'open' and session.id != self.current_session.id:
+            context_lines.append(
+                f"<span style='color:#dc2626;'>ملاحظة: الأوامر (إضافة مصروف/فليكسي) ستطبق على الجلسة المفتوحة رقم {self.current_session.id}.</span>"
+            )
+
+        if hasattr(self, "session_context_label"):
+            self.session_context_label.setText("<br/>".join(context_lines))
+
+        is_current_open = (
+            self.current_session
+            and session.id == self.current_session.id
+            and self.current_session.status == 'open'
+        )
+        self.notes_editor.setReadOnly(not is_current_open)
+        self.save_notes_btn.setEnabled(is_current_open)
 
     def open_cash_session(self):
         dialog = OpenCashDialog(self)
@@ -1770,9 +1849,15 @@ class UserDashboard(QMainWindow):
         self.add_expense_btn.setEnabled(has_open_session)
         self.add_flexi_btn.setEnabled(has_open_session)
         self.close_cash_btn.setEnabled(has_open_session)
-        if not has_open_session:
-            self.sessions_history_list.clearSelection()
-            self.display_session_details(None)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_summary_grid_layout()
+
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, "summary_container", None) and event.type() == QEvent.Type.Resize:
+            self.update_summary_grid_layout()
+        return super().eventFilter(obj, event)
 
     def closeEvent(self, event):
         try:

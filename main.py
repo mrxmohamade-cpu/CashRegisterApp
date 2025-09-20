@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
+    QBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -56,13 +57,18 @@ class LoginWindow(QMainWindow):
         main_layout = QHBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
+        self.main_layout = main_layout
 
         # --- لوحة التعريف ---
         brand_frame = QFrame()
         brand_frame.setObjectName("BrandFrame")
+        brand_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.brand_frame = brand_frame
+
         brand_layout = QVBoxLayout(brand_frame)
         brand_layout.setContentsMargins(60, 80, 60, 60)
         brand_layout.setSpacing(24)
+        self.brand_layout = brand_layout
 
         brand_badge = QLabel("نسخة خرافية")
         brand_badge.setObjectName("BrandBadge")
@@ -73,8 +79,8 @@ class LoginWindow(QMainWindow):
         brand_title.setWordWrap(True)
 
         brand_subtitle = QLabel(
-            "راقب جلساتك، المصاريف، والفليكسي بلمسة واحدة."
-            " لوحة القيادة الذكية تمنحك الوضوح في كل لحظة."
+            "راقب جلساتك، المصاريف، والفليكسي بلمسة واحدة.\n"
+            "لوحة القيادة الذكية تمنحك الوضوح في كل لحظة."
         )
         brand_subtitle.setObjectName("BrandSubtitle")
         brand_subtitle.setWordWrap(True)
@@ -106,11 +112,16 @@ class LoginWindow(QMainWindow):
         login_side_layout.setContentsMargins(0, 0, 0, 0)
         login_side_layout.setSpacing(0)
         login_side_layout.addStretch()
+        self.login_side_layout = login_side_layout
 
         login_frame = QFrame()
         login_frame.setObjectName("LoginFrame")
-        login_frame.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
-        login_frame.setFixedWidth(420)
+        login_frame.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self._login_frame_min_width = 360
+        self._login_frame_max_width = 520
+        login_frame.setMinimumWidth(self._login_frame_min_width)
+        login_frame.setMaximumWidth(self._login_frame_max_width)
+        self.login_frame = login_frame
 
         card_layout = QVBoxLayout(login_frame)
         card_layout.setContentsMargins(40, 45, 40, 45)
@@ -180,6 +191,9 @@ class LoginWindow(QMainWindow):
         self.password_input.returnPressed.connect(self.handle_login)
         self.username_input.returnPressed.connect(self.password_input.setFocus)
 
+        # Ensure layout adapts to the initial size
+        self.update_login_layout(self.size())
+
     def apply_styles(self):
         self.setStyleSheet("""
             QMainWindow {
@@ -205,18 +219,19 @@ class LoginWindow(QMainWindow):
                 font-size: 28pt;
                 font-weight: 800;
                 line-height: 1.2;
+                color: #f8fafc;
             }
             #BrandSubtitle {
-                font-size: 12.5pt;
-                color: rgba(226, 232, 240, 0.92);
+                font-size: 13pt;
+                color: rgba(248, 250, 252, 0.94);
             }
             #BrandPoints {
                 font-size: 11.5pt;
-                color: rgba(241, 245, 249, 0.88);
+                color: rgba(241, 245, 249, 0.95);
             }
             #BrandFooter {
                 font-size: 9pt;
-                color: rgba(226, 232, 240, 0.65);
+                color: rgba(226, 232, 240, 0.8);
             }
             #LoginFrame {
                 background-color: #ffffff;
@@ -330,6 +345,40 @@ class LoginWindow(QMainWindow):
                 background-color: #1d4ed8;
             }
         """)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_login_layout(event.size())
+
+    def update_login_layout(self, size):
+        available_width = size.width()
+        if available_width <= 0:
+            available_width = self.width()
+
+        if available_width < 920:
+            self.main_layout.setDirection(QBoxLayout.Direction.TopToBottom)
+            self.main_layout.setSpacing(24)
+            self.brand_layout.setContentsMargins(28, 32, 28, 24)
+            self.brand_layout.setSpacing(18)
+            self.brand_layout.setStretch(1, 0)
+            self.brand_layout.setStretch(6, 0)
+            self.login_side_layout.setContentsMargins(0, 0, 0, 32)
+            max_width = max(
+                self._login_frame_min_width,
+                min(self._login_frame_max_width, available_width - 80)
+            )
+            self.login_frame.setMaximumWidth(max_width)
+            self.login_frame.setMinimumWidth(self._login_frame_min_width)
+        else:
+            self.main_layout.setDirection(QBoxLayout.Direction.LeftToRight)
+            self.main_layout.setSpacing(0)
+            self.brand_layout.setContentsMargins(60, 80, 60, 60)
+            self.brand_layout.setSpacing(24)
+            self.brand_layout.setStretch(1, 1)
+            self.brand_layout.setStretch(6, 2)
+            self.login_side_layout.setContentsMargins(0, 0, 0, 0)
+            self.login_frame.setMinimumWidth(self._login_frame_min_width)
+            self.login_frame.setMaximumWidth(self._login_frame_max_width)
 
     def handle_login(self):
         username = self.username_input.text()
