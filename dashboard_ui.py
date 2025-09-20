@@ -6,9 +6,11 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QLineEdit, QDialogButtonBox, QListWidget,
                              QListWidgetItem, QTextEdit, QSplitter, QHeaderView,
                              QStyle, QFrame, QSizePolicy, QMenu, QFormLayout, QCheckBox,
-                             QGridLayout, QGraphicsDropShadowEffect, QScrollArea)
-from PyQt6.QtGui import QColor, QDoubleValidator, QMouseEvent, QFont, QAction
-from PyQt6.QtCore import Qt, QSize, QPoint, QEvent, QTimer
+                             QGridLayout, QGraphicsDropShadowEffect, QScrollArea, QTabWidget,
+                             QComboBox, QToolButton)
+from PyQt6.QtGui import QColor, QDoubleValidator, QMouseEvent, QFont, QAction, QPainter
+from PyQt6.QtCore import Qt, QSize, QPoint, QEvent, QTimer, QDateTime, pyqtSignal
+from PyQt6.QtCharts import QChart, QChartView, QLineSeries, QPieSeries, QDateTimeAxis, QValueAxis
 
 from ui_helpers import FlowLayout
 
@@ -875,6 +877,12 @@ class UserDashboard(QMainWindow):
         self._current_action_spacing = None
         self._last_splitter_sizes = None
         self._current_splitter_orientation = None
+        self.dark_mode = False
+        self.overview_cards = {}
+        self.revenue_chart_view = None
+        self.breakdown_chart_view = None
+        self.global_expenses_table = None
+        self.global_flexi_table = None
         self.setWindowTitle(f"نظام إدارة الصندوق - {self.user.username}")
         self.setGeometry(80, 80, 1300, 760)
         self.setMinimumSize(1024, 640)
@@ -886,9 +894,94 @@ class UserDashboard(QMainWindow):
     def setup_ui(self):
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
-        main_layout = QHBoxLayout(main_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+
+        root_layout = QVBoxLayout(main_widget)
+        root_layout.setContentsMargins(24, 24, 24, 24)
+        root_layout.setSpacing(20)
+
+        overview_bar = self.create_overview_bar()
+        root_layout.addWidget(overview_bar)
+
+        self.section_tabs = QTabWidget()
+        self.section_tabs.setObjectName("NavigationTabs")
+        self.section_tabs.setTabPosition(QTabWidget.TabPosition.West)
+        self.section_tabs.setMovable(False)
+        self.section_tabs.setDocumentMode(True)
+        self.section_tabs.setIconSize(QSize(28, 28))
+        root_layout.addWidget(self.section_tabs, 1)
+
+        sessions_page = QWidget()
+        sessions_layout = QVBoxLayout(sessions_page)
+        sessions_layout.setContentsMargins(0, 0, 0, 0)
+        sessions_layout.setSpacing(18)
+
+        header_widget = QWidget()
+        header_widget.setObjectName("SessionsHeader")
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(12)
+
+        self.welcome_label = QLabel(f"<b>أهلاً بك، {self.user.username}</b>")
+        self.welcome_label.setObjectName("WelcomeLabel")
+        self.welcome_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.welcome_label.setWordWrap(True)
+
+        self.session_status_filter = QComboBox()
+        self.session_status_filter.setObjectName("StatusFilter")
+        self.session_status_filter.addItem("كل الحالات", None)
+        self.session_status_filter.addItem("الجلسات المفتوحة", "open")
+        self.session_status_filter.addItem("الجلسات المغلقة", "closed")
+        self.session_status_filter.currentIndexChanged.connect(
+            lambda _: self.filter_sessions_history(self.history_search_input.text())
+        )
+
+        self.history_search_input = QLineEdit()
+        self.history_search_input.setObjectName("HistorySearch")
+        self.history_search_input.setPlaceholderText("ابحث باسم العامل أو تاريخ الجلسة أو الحالة...")
+        self.history_search_input.setClearButtonEnabled(True)
+        self.history_search_input.textChanged.connect(self.filter_sessions_history)
+
+        header_layout.addWidget(self.welcome_label)
+        header_layout.addStretch()
+        header_layout.addWidget(self.session_status_filter)
+        header_layout.addWidget(self.history_search_input)
+
+        sessions_layout.addWidget(header_widget)
+
+        actions_container = QWidget()
+        actions_container.setObjectName("ActionsContainer")
+        actions_flow = FlowLayout(spacing=12, alignment=Qt.AlignmentFlag.AlignRight)
+        actions_flow.setContentsMargins(0, 0, 0, 0)
+        actions_container.setLayout(actions_flow)
+        self.actions_flow = actions_flow
+
+        self.open_cash_btn = QPushButton(" فتح الصندوق")
+        self.add_expense_btn = QPushButton(" إضافة مصروف")
+        self.add_flexi_btn = QPushButton(" إضافة فليكسي")
+        self.close_cash_btn = QPushButton(" غلق الصندوق")
+        self.open_cash_btn.setObjectName("SuccessButton")
+        self.close_cash_btn.setObjectName("DangerButton")
+        self.add_expense_btn.setObjectName("PrimaryButton")
+        self.add_flexi_btn.setObjectName("SecondaryButton")
+
+        self.open_cash_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogYesButton))
+        self.add_expense_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+        self.add_flexi_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowUp))
+        self.close_cash_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogNoButton))
+
+        self.action_buttons = [
+            self.open_cash_btn,
+            self.add_expense_btn,
+            self.add_flexi_btn,
+            self.close_cash_btn,
+        ]
+        for btn in self.action_buttons:
+            btn.setIconSize(QSize(16, 16))
+            btn.setMinimumHeight(44)
+            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            actions_flow.addWidget(btn)
+
+        sessions_layout.addWidget(actions_container)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setChildrenCollapsible(False)
@@ -909,12 +1002,6 @@ class UserDashboard(QMainWindow):
         history_label = QLabel("سجل الجلسات")
         history_label.setObjectName("HistoryTitle")
 
-        self.history_search_input = QLineEdit()
-        self.history_search_input.setObjectName("HistorySearch")
-        self.history_search_input.setPlaceholderText("ابحث باسم العامل أو تاريخ الجلسة أو الحالة...")
-        self.history_search_input.setClearButtonEnabled(True)
-        self.history_search_input.textChanged.connect(self.filter_sessions_history)
-
         self.sessions_history_list = QListWidget()
         self.sessions_history_list.setObjectName("SessionsList")
         self.sessions_history_list.setSpacing(12)
@@ -923,7 +1010,6 @@ class UserDashboard(QMainWindow):
         self.sessions_history_list.currentItemChanged.connect(self.select_session_from_history)
 
         history_layout.addWidget(history_label)
-        history_layout.addWidget(self.history_search_input)
         history_layout.addWidget(self.sessions_history_list)
         splitter.addWidget(history_widget)
 
@@ -940,59 +1026,6 @@ class UserDashboard(QMainWindow):
         details_layout.setContentsMargins(30, 20, 30, 20)
         details_layout.setSpacing(20)
         self.details_layout = details_layout
-
-        top_bar_container = QWidget()
-        top_bar_container.setObjectName("TopBar")
-        top_bar_layout = QVBoxLayout(top_bar_container)
-        top_bar_layout.setContentsMargins(0, 0, 0, 0)
-        top_bar_layout.setSpacing(10)
-
-        header_row = QHBoxLayout()
-        header_row.setContentsMargins(0, 0, 0, 0)
-        header_row.setSpacing(10)
-        header_row.addStretch()
-        welcome_label = QLabel(f"<b>أهلاً بك، {self.user.username}</b>")
-        welcome_label.setObjectName("WelcomeLabel")
-        welcome_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        welcome_label.setWordWrap(True)
-        header_row.addWidget(welcome_label)
-        top_bar_layout.addLayout(header_row)
-
-        self.open_cash_btn = QPushButton(" فتح الصندوق")
-        self.add_expense_btn = QPushButton(" إضافة مصروف")
-
-        # NEW: Flexi button
-        self.add_flexi_btn = QPushButton(" إضافة فليكسي")
-        
-        self.close_cash_btn = QPushButton(" غلق الصندوق")
-        self.open_cash_btn.setObjectName("SuccessButton")
-        self.close_cash_btn.setObjectName("DangerButton")
-        self.add_expense_btn.setObjectName("PrimaryButton")
-        self.add_flexi_btn.setObjectName("SecondaryButton")
-
-        self.open_cash_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogYesButton))
-        self.add_expense_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
-        self.add_flexi_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowUp))
-        self.close_cash_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogNoButton))
-
-        actions_flow = FlowLayout(spacing=12, alignment=Qt.AlignmentFlag.AlignRight)
-        actions_flow.setContentsMargins(0, 0, 0, 0)
-        self.actions_flow = actions_flow
-        self.action_buttons = [
-            self.open_cash_btn,
-            self.add_expense_btn,
-            self.add_flexi_btn,
-            self.close_cash_btn,
-        ]
-        for btn in self.action_buttons:
-            btn.setIconSize(QSize(16, 16))
-            btn.setMinimumHeight(40)
-            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            actions_flow.addWidget(btn)
-
-        top_bar_layout.addLayout(actions_flow)
-        details_layout.addWidget(top_bar_container)
-        self.top_bar_container = top_bar_container
 
         self.session_context_label = QLabel("اختر جلسة من السجل لعرض تفاصيلها")
         self.session_context_label.setObjectName("SessionContextLabel")
@@ -1032,6 +1065,31 @@ class UserDashboard(QMainWindow):
         self.update_summary_grid_layout(force=True)
 
         details_layout.addWidget(summary_container)
+
+        analytics_container = QWidget()
+        analytics_container.setObjectName("Container")
+        analytics_shadow = QGraphicsDropShadowEffect(analytics_container)
+        analytics_shadow.setOffset(0, 12)
+        analytics_shadow.setBlurRadius(24)
+        analytics_shadow.setColor(QColor(15, 23, 42, 45))
+        analytics_container.setGraphicsEffect(analytics_shadow)
+        analytics_layout = QHBoxLayout(analytics_container)
+        analytics_layout.setContentsMargins(24, 24, 24, 24)
+        analytics_layout.setSpacing(18)
+
+        self.revenue_chart_view = QChartView()
+        self.revenue_chart_view.setObjectName("AnalyticsChart")
+        self.revenue_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        self.revenue_chart_view.setMinimumHeight(260)
+        analytics_layout.addWidget(self.revenue_chart_view, 2)
+
+        self.breakdown_chart_view = QChartView()
+        self.breakdown_chart_view.setObjectName("AnalyticsChart")
+        self.breakdown_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        self.breakdown_chart_view.setMinimumHeight(260)
+        analytics_layout.addWidget(self.breakdown_chart_view, 1)
+
+        details_layout.addWidget(analytics_container)
 
         bottom_splitter = QSplitter(Qt.Orientation.Vertical)
         bottom_splitter.setChildrenCollapsible(False)
@@ -1121,7 +1179,12 @@ class UserDashboard(QMainWindow):
         self.details_scroll = details_scroll
         self.bottom_splitter = bottom_splitter
 
-        main_layout.addWidget(splitter)
+        sessions_layout.addWidget(splitter, 1)
+
+        self.section_tabs.addTab(sessions_page, "🗂 الجلسات")
+        self.section_tabs.addTab(self.build_expenses_tab(), "💸 المصاريف")
+        self.section_tabs.addTab(self.build_flexi_tab(), "➕ إضافات الفليكسي")
+        self.section_tabs.currentChanged.connect(self.handle_tab_change)
 
         # Events
         self.open_cash_btn.clicked.connect(self.open_cash_session)
@@ -1133,231 +1196,765 @@ class UserDashboard(QMainWindow):
         self.update_responsive_layouts()
         self.rebalance_splitter()
 
+    def create_overview_bar(self):
+        bar = QFrame()
+        bar.setObjectName("OverviewBar")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(24, 18, 24, 18)
+        layout.setSpacing(20)
+
+        cards_wrapper = QWidget()
+        cards_layout = QHBoxLayout(cards_wrapper)
+        cards_layout.setContentsMargins(0, 0, 0, 0)
+        cards_layout.setSpacing(16)
+
+        profit_card, profit_value, profit_caption = self._create_overview_card("✅", "إجمالي الأرباح", "emerald")
+        expense_card, expense_value, expense_caption = self._create_overview_card("❌", "إجمالي المصاريف", "rose")
+        balance_card, balance_value, balance_caption = self._create_overview_card("⚖️", "صافي الرصيد", "indigo")
+
+        cards_layout.addWidget(profit_card)
+        cards_layout.addWidget(expense_card)
+        cards_layout.addWidget(balance_card)
+
+        layout.addWidget(cards_wrapper, 1)
+
+        self.overview_cards = {
+            "profit": {"value": profit_value, "caption": profit_caption},
+            "expenses": {"value": expense_value, "caption": expense_caption},
+            "balance": {"value": balance_value, "caption": balance_caption},
+        }
+
+        self.theme_toggle = QToolButton()
+        self.theme_toggle.setObjectName("ThemeToggle")
+        self.theme_toggle.setText("🌙 الوضع الليلي")
+        self.theme_toggle.setCheckable(True)
+        self.theme_toggle.setAutoRaise(True)
+        self.theme_toggle.toggled.connect(self.toggle_theme)
+        layout.addWidget(self.theme_toggle, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        return bar
+
+    def _create_overview_card(self, icon_text: str, title: str, accent: str):
+        card = QFrame()
+        card.setObjectName("SummaryCard")
+        card.setProperty("accentColor", accent)
+        card_layout = QHBoxLayout(card)
+        card_layout.setContentsMargins(18, 16, 18, 16)
+        card_layout.setSpacing(16)
+
+        icon_label = QLabel(icon_text)
+        icon_label.setObjectName("SummaryCardIcon")
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setFixedSize(44, 44)
+
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(4)
+
+        title_label = QLabel(title)
+        title_label.setObjectName("SummaryCardTitle")
+        value_label = QLabel("0.00 دج")
+        value_label.setObjectName("SummaryCardValue")
+        caption_label = QLabel("—")
+        caption_label.setObjectName("SummaryCardCaption")
+
+        text_layout.addWidget(title_label)
+        text_layout.addWidget(value_label)
+        text_layout.addWidget(caption_label)
+
+        card_layout.addWidget(icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        card_layout.addLayout(text_layout)
+
+        return card, value_label, caption_label
+
+    def build_expenses_tab(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(18)
+
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(12)
+
+        title = QLabel("المصاريف عبر الجلسات")
+        title.setObjectName("SectionTitle")
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+
+        self.expenses_search_input = QLineEdit()
+        self.expenses_search_input.setPlaceholderText("ابحث حسب الملاحظة أو التاريخ أو المبلغ...")
+        self.expenses_search_input.setClearButtonEnabled(True)
+        self.expenses_search_input.textChanged.connect(self.filter_expenses_table)
+        header_layout.addWidget(self.expenses_search_input)
+
+        layout.addWidget(header)
+
+        table_container = QWidget()
+        table_container.setObjectName("Container")
+        table_shadow = QGraphicsDropShadowEffect(table_container)
+        table_shadow.setOffset(0, 12)
+        table_shadow.setBlurRadius(24)
+        table_shadow.setColor(QColor(15, 23, 42, 45))
+        table_container.setGraphicsEffect(table_shadow)
+        table_layout = QVBoxLayout(table_container)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+        table_layout.setSpacing(12)
+
+        self.global_expenses_table = QTableWidget()
+        self.global_expenses_table.setColumnCount(5)
+        self.global_expenses_table.setHorizontalHeaderLabels([
+            "#",
+            "الجلسة",
+            "التاريخ",
+            "المبلغ",
+            "الوصف",
+        ])
+        self.global_expenses_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.global_expenses_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.global_expenses_table.setAlternatingRowColors(True)
+        self.global_expenses_table.setSortingEnabled(True)
+        self.global_expenses_table.verticalHeader().setVisible(False)
+        self.global_expenses_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.global_expenses_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.global_expenses_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.global_expenses_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.global_expenses_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+
+        table_layout.addWidget(self.global_expenses_table)
+        layout.addWidget(table_container, 1)
+
+        return page
+
+    def build_flexi_tab(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(18)
+
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(12)
+
+        title = QLabel("إضافات الفليكسي")
+        title.setObjectName("SectionTitle")
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+
+        self.flexi_search_input = QLineEdit()
+        self.flexi_search_input.setPlaceholderText("ابحث حسب الملاحظة أو التاريخ أو المبلغ...")
+        self.flexi_search_input.setClearButtonEnabled(True)
+        self.flexi_search_input.textChanged.connect(self.filter_flexi_table)
+        header_layout.addWidget(self.flexi_search_input)
+
+        layout.addWidget(header)
+
+        table_container = QWidget()
+        table_container.setObjectName("Container")
+        table_shadow = QGraphicsDropShadowEffect(table_container)
+        table_shadow.setOffset(0, 12)
+        table_shadow.setBlurRadius(24)
+        table_shadow.setColor(QColor(15, 23, 42, 45))
+        table_container.setGraphicsEffect(table_shadow)
+        table_layout = QVBoxLayout(table_container)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+        table_layout.setSpacing(12)
+
+        self.global_flexi_table = QTableWidget()
+        self.global_flexi_table.setColumnCount(6)
+        self.global_flexi_table.setHorizontalHeaderLabels([
+            "#",
+            "الجلسة",
+            "التاريخ",
+            "المبلغ",
+            "الحالة",
+            "الوصف",
+        ])
+        self.global_flexi_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.global_flexi_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.global_flexi_table.setAlternatingRowColors(True)
+        self.global_flexi_table.setSortingEnabled(True)
+        self.global_flexi_table.verticalHeader().setVisible(False)
+        self.global_flexi_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.global_flexi_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.global_flexi_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.global_flexi_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.global_flexi_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self.global_flexi_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+
+        table_layout.addWidget(self.global_flexi_table)
+        layout.addWidget(table_container, 1)
+
+        return page
+
+    def handle_tab_change(self, index: int):
+        if index == 1:
+            self.refresh_global_expenses_table()
+        elif index == 2:
+            self.refresh_global_flexi_table()
+
+    def refresh_dashboard_overview(self):
+        if not self.overview_cards:
+            return
+
+        sessions = list(self.all_sessions or [])
+        total_expenses = 0.0
+        total_net = 0.0
+        for session in sessions:
+            try:
+                total_expenses += float(getattr(session, "total_expense", 0.0) or 0.0)
+            except Exception:
+                pass
+            try:
+                total_net += float(getattr(session, "net_profit", 0.0) or 0.0)
+            except Exception:
+                pass
+
+        total_profit = max(total_net + total_expenses, 0.0)
+        net_balance = total_net
+
+        self.overview_cards["profit"]["value"].setText(f"{total_profit:,.2f} دج")
+        self.overview_cards["expenses"]["value"].setText(f"{total_expenses:,.2f} دج")
+        self.overview_cards["balance"]["value"].setText(f"{net_balance:,.2f} دج")
+
+        if net_balance >= 0:
+            self.overview_cards["balance"]["value"].setStyleSheet("color: #0ea5e9; font-weight:800;")
+        else:
+            self.overview_cards["balance"]["value"].setStyleSheet("color: #ef4444; font-weight:800;")
+
+        if sessions:
+            latest_session = max(
+                sessions,
+                key=lambda s: getattr(s, "start_time", None) or getattr(s, "end_time", None) or datetime.datetime.min,
+            )
+            timestamp = getattr(latest_session, "end_time", None) or getattr(latest_session, "start_time", None)
+            self.overview_cards["profit"]["caption"].setText(
+                f"آخر تحديث {self._format_datetime(timestamp, fallback='—')}"
+            )
+            self.overview_cards["expenses"]["caption"].setText(f"إجمالي {len(sessions)} جلسات")
+        else:
+            self.overview_cards["profit"]["caption"].setText("—")
+            self.overview_cards["expenses"]["caption"].setText("—")
+
+        self.overview_cards["balance"]["caption"].setText(
+            "نتيجة الربح - المصاريف" if sessions else "—"
+        )
+
+    def refresh_global_expenses_table(self):
+        if not self.global_expenses_table:
+            return
+
+        rows = []
+        for session in self.all_sessions or []:
+            transactions = list(getattr(session, "transactions", []) or [])
+            if not transactions:
+                try:
+                    transactions = self.db_session.query(Transaction).filter_by(session_id=session.id).all()
+                except Exception:
+                    transactions = []
+            for txn in transactions:
+                if getattr(txn, "type", "") != "expense":
+                    continue
+                amount = float(getattr(txn, "amount", 0.0) or 0.0)
+                rows.append(
+                    (
+                        getattr(txn, "id", "—"),
+                        session.id,
+                        self._format_datetime(getattr(txn, "timestamp", None)),
+                        amount,
+                        getattr(txn, "description", ""),
+                    )
+                )
+
+        self.global_expenses_table.setSortingEnabled(False)
+        self.global_expenses_table.setRowCount(len(rows))
+        for row_index, row_data in enumerate(rows):
+            for column_index, value in enumerate(row_data):
+                item = QTableWidgetItem(str(value))
+                if column_index in (0, 1, 3):
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if column_index == 3:
+                    item.setText(f"{float(value):,.2f}")
+                self.global_expenses_table.setItem(row_index, column_index, item)
+        self.global_expenses_table.setSortingEnabled(True)
+        self.filter_expenses_table(self.expenses_search_input.text() if hasattr(self, "expenses_search_input") else "")
+
+    def refresh_global_flexi_table(self):
+        if not self.global_flexi_table:
+            return
+
+        rows = []
+        for session in self.all_sessions or []:
+            flexi_records = list(getattr(session, "flexi_transactions", []) or [])
+            if not flexi_records:
+                try:
+                    flexi_records = self.db_session.query(FlexiTransaction).filter_by(session_id=session.id).all()
+                except Exception:
+                    flexi_records = []
+            for record in flexi_records:
+                amount = float(getattr(record, "amount", 0.0) or 0.0)
+                is_paid = getattr(record, "is_paid", False)
+                status_text = "مدفوع" if is_paid else "غير مدفوع"
+                rows.append(
+                    (
+                        getattr(record, "id", "—"),
+                        session.id,
+                        self._format_datetime(getattr(record, "timestamp", None)),
+                        amount,
+                        status_text,
+                        getattr(record, "description", ""),
+                    )
+                )
+
+        self.global_flexi_table.setSortingEnabled(False)
+        self.global_flexi_table.setRowCount(len(rows))
+        for row_index, row_data in enumerate(rows):
+            for column_index, value in enumerate(row_data):
+                item = QTableWidgetItem(str(value))
+                if column_index in (0, 1, 3, 4):
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if column_index == 3:
+                    item.setText(f"{float(value):,.2f}")
+                self.global_flexi_table.setItem(row_index, column_index, item)
+        self.global_flexi_table.setSortingEnabled(True)
+        self.filter_flexi_table(self.flexi_search_input.text() if hasattr(self, "flexi_search_input") else "")
+
+    def filter_expenses_table(self, text: str):
+        if not self.global_expenses_table:
+            return
+        query = (text or "").strip().lower()
+        for row in range(self.global_expenses_table.rowCount()):
+            visible = not query
+            if not visible:
+                for column in range(self.global_expenses_table.columnCount()):
+                    item = self.global_expenses_table.item(row, column)
+                    if item and query in item.text().lower():
+                        visible = True
+                        break
+            self.global_expenses_table.setRowHidden(row, not visible)
+
+    def filter_flexi_table(self, text: str):
+        if not self.global_flexi_table:
+            return
+        query = (text or "").strip().lower()
+        for row in range(self.global_flexi_table.rowCount()):
+            visible = not query
+            if not visible:
+                for column in range(self.global_flexi_table.columnCount()):
+                    item = self.global_flexi_table.item(row, column)
+                    if item and query in item.text().lower():
+                        visible = True
+                        break
+            self.global_flexi_table.setRowHidden(row, not visible)
+
+    def toggle_theme(self, enabled: bool):
+        self.dark_mode = bool(enabled)
+        if hasattr(self, "theme_toggle"):
+            self.theme_toggle.setText("☀️ الوضع الفاتح" if self.dark_mode else "🌙 الوضع الليلي")
+        self.apply_styles()
+        self.refresh_analytics_charts()
+
+    def refresh_analytics_charts(self):
+        if not self.revenue_chart_view or not self.breakdown_chart_view:
+            return
+
+        sessions = sorted(
+            list(self.all_sessions or []),
+            key=lambda s: getattr(s, "start_time", None) or getattr(s, "end_time", None) or datetime.datetime.min,
+        )
+
+        profit_series = QLineSeries()
+        profit_series.setName("الأرباح")
+        profit_series.setColor(QColor("#22c55e"))
+
+        expense_series = QLineSeries()
+        expense_series.setName("المصاريف")
+        expense_series.setColor(QColor("#ef4444"))
+
+        max_value = 0.0
+        for session in sessions:
+            reference_time = getattr(session, "start_time", None) or getattr(session, "end_time", None)
+            if not reference_time:
+                reference_time = datetime.datetime.now()
+            if reference_time.tzinfo is not None:
+                reference_time = reference_time.astimezone(datetime.timezone.utc).replace(tzinfo=datetime.timezone.utc)
+            timestamp_ms = int(reference_time.timestamp() * 1000)
+
+            total_expense = float(getattr(session, "total_expense", 0.0) or 0.0)
+            total_net = float(getattr(session, "net_profit", 0.0) or 0.0)
+            estimated_profit = max(total_net + total_expense, 0.0)
+
+            profit_series.append(timestamp_ms, estimated_profit)
+            expense_series.append(timestamp_ms, total_expense)
+
+            max_value = max(max_value, estimated_profit, total_expense)
+
+        revenue_chart = QChart()
+        revenue_chart.addSeries(profit_series)
+        revenue_chart.addSeries(expense_series)
+        revenue_chart.legend().setAlignment(Qt.AlignmentFlag.AlignBottom)
+        revenue_chart.setAnimationOptions(QChart.AnimationOption.SeriesAnimations)
+        revenue_chart.setBackgroundVisible(False)
+        revenue_chart.setDropShadowEnabled(False)
+        revenue_chart.setTitle("تدفق الأرباح والمصاريف")
+
+        axis_x = QDateTimeAxis()
+        axis_x.setFormat("dd/MM")
+        axis_x.setTitleText("التاريخ")
+        axis_y = QValueAxis()
+        axis_y.setLabelFormat("%.0f")
+        axis_y.setTitleText("المبلغ (دج)")
+        axis_y.setRange(0, max_value * 1.1 if max_value else 10)
+
+        revenue_chart.addAxis(axis_x, Qt.AlignmentFlag.AlignBottom)
+        revenue_chart.addAxis(axis_y, Qt.AlignmentFlag.AlignLeft)
+        profit_series.attachAxis(axis_x)
+        profit_series.attachAxis(axis_y)
+        expense_series.attachAxis(axis_x)
+        expense_series.attachAxis(axis_y)
+
+        self._apply_chart_palette(revenue_chart)
+        self.revenue_chart_view.setChart(revenue_chart)
+
+        total_expenses = sum(float(getattr(s, "total_expense", 0.0) or 0.0) for s in sessions)
+        total_profit = sum(max(float(getattr(s, "net_profit", 0.0) or 0.0) + float(getattr(s, "total_expense", 0.0) or 0.0), 0.0) for s in sessions)
+
+        breakdown_chart = QChart()
+        breakdown_chart.setTitle("نسبة الأرباح إلى المصاريف")
+        breakdown_chart.setAnimationOptions(QChart.AnimationOption.SeriesAnimations)
+        breakdown_chart.setBackgroundVisible(False)
+        breakdown_chart.setDropShadowEnabled(False)
+
+        pie_series = QPieSeries()
+        profit_value = max(total_profit, 0.0)
+        expense_value = max(total_expenses, 0.0)
+        if profit_value == 0 and expense_value == 0:
+            pie_series.append("لا توجد بيانات", 1)
+        else:
+            if profit_value:
+                pie_series.append("الأرباح", profit_value)
+            if expense_value:
+                pie_series.append("المصاريف", expense_value)
+
+        for slice_ in pie_series.slices():
+            slice_.setLabelVisible(True)
+            if slice_.label() == "الأرباح":
+                slice_.setBrush(QColor("#22c55e"))
+            elif slice_.label() == "المصاريف":
+                slice_.setBrush(QColor("#ef4444"))
+
+        breakdown_chart.addSeries(pie_series)
+        breakdown_chart.legend().setAlignment(Qt.AlignmentFlag.AlignBottom)
+        self._apply_chart_palette(breakdown_chart)
+        self.breakdown_chart_view.setChart(breakdown_chart)
+
+    def _apply_chart_palette(self, chart: QChart):
+        title_color = QColor("#f8fafc") if self.dark_mode else QColor("#0f172a")
+        text_color = QColor("#e2e8f0") if self.dark_mode else QColor("#475569")
+        chart.setTitleBrush(title_color)
+        chart.legend().setLabelColor(text_color)
+        for axis in chart.axes():
+            axis.setLabelsColor(text_color)
+            axis.setTitleBrush(text_color)
+
+    def _format_datetime(self, value, fallback: str = "—") -> str:
+        if not value:
+            return fallback
+        try:
+            if isinstance(value, datetime.datetime):
+                if value.tzinfo is not None:
+                    value = value.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+                return value.strftime("%d/%m/%Y %H:%M")
+        except Exception:
+            pass
+        try:
+            return str(value)
+        except Exception:
+            return fallback
+
+
     def apply_styles(self):
-        stylesheet = """
-            QMainWindow {
-                background-color: #e8ecf7;
-                font-family: 'Segoe UI', 'Cairo', sans-serif;
-            }
-            #HistoryWidget {
-                background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #f8fafc, stop:1 #eef2ff);
-                border-right: 1px solid rgba(148, 163, 184, 0.25);
-            }
-            QScrollArea#DetailsScrollArea {
+        palette_light = {
+            "window_bg": "#e7f0ff",
+            "surface": "#ffffff",
+            "surface_alt": "#f1f5f9",
+            "muted_surface": "rgba(148, 163, 184, 0.16)",
+            "border": "rgba(148, 163, 184, 0.35)",
+            "accent": "#2563eb",
+            "accent_border": "rgba(37, 99, 235, 0.45)",
+            "accent_text": "#ffffff",
+            "text_primary": "#0f172a",
+            "text_muted": "#64748b",
+            "success": "#16a34a",
+            "danger": "#dc2626",
+        }
+        palette_dark = {
+            "window_bg": "#0f172a",
+            "surface": "#1e293b",
+            "surface_alt": "#111827",
+            "muted_surface": "rgba(148, 163, 184, 0.12)",
+            "border": "rgba(148, 163, 184, 0.25)",
+            "accent": "#38bdf8",
+            "accent_border": "rgba(14, 165, 233, 0.45)",
+            "accent_text": "#0f172a",
+            "text_primary": "#e2e8f0",
+            "text_muted": "#94a3b8",
+            "success": "#4ade80",
+            "danger": "#f87171",
+        }
+
+        palette = palette_dark if self.dark_mode else palette_light
+
+        accent_styles = {
+            "emerald": {"bg": "rgba(34, 197, 94, 0.18)", "color": "#047857"},
+            "rose": {"bg": "rgba(244, 114, 182, 0.2)", "color": "#be123c"},
+            "indigo": {"bg": "rgba(99, 102, 241, 0.18)", "color": "#4338ca"},
+            "cyan": {"bg": "rgba(14, 165, 233, 0.2)", "color": "#0e7490"},
+            "violet": {"bg": "rgba(139, 92, 246, 0.18)", "color": "#6d28d9"},
+        }
+
+        stylesheet = f"""
+            QMainWindow {{
+                background-color: {palette['window_bg']};
+                color: {palette['text_primary']};
+                font-family: 'Tajawal', 'Cairo', 'Segoe UI', sans-serif;
+            }}
+            QScrollArea#DetailsScrollArea {{
                 border: none;
                 background: transparent;
-            }
-            QWidget#DetailsContent {
-                background-color: #eef2ff;
-            }
-            #TopBar {
-                background: transparent;
-            }
-            #HistoryTitle {
+            }}
+            QWidget#DetailsContent {{
+                background-color: {palette['surface_alt']};
+            }}
+            #HistoryWidget {{
+                background-color: {palette['surface']};
+                border-right: 1px solid {palette['border']};
+            }}
+            #HistoryTitle {{
                 font-size: 16pt;
                 font-weight: 800;
-                color: #0f172a;
+                color: {palette['text_primary']};
                 padding: 20px 18px 10px;
                 background: transparent;
-            }
-            #HistorySearch {
-                margin: 0 18px 18px;
-                padding: 12px 18px;
+            }}
+            QLineEdit#HistorySearch, QLineEdit, QComboBox {{
+                padding: 12px 14px;
                 border-radius: 16px;
-                border: 1px solid rgba(148, 163, 184, 0.35);
-                background: rgba(255, 255, 255, 0.85);
-                color: #0f172a;
-                font-size: 11pt;
-            }
-            #HistorySearch:focus {
-                border: 2px solid #2563eb;
-                padding: 11px 17px;
-                background: rgba(255, 255, 255, 0.95);
-            }
-            #HistorySearch::placeholder {
-                color: rgba(100, 116, 139, 0.75);
-            }
-            #WelcomeLabel { font-size: 18pt; font-weight: 800; color: #0f172a; margin-bottom: 10px; }
-            #SessionContextLabel {
-                background: rgba(255, 255, 255, 0.86);
-                border-radius: 20px;
-                padding: 16px 22px;
+                border: 1px solid {palette['border']};
+                background-color: {palette['surface']};
+                color: {palette['text_primary']};
+                selection-background-color: {palette['accent']};
                 font-size: 11.5pt;
-                color: #1e293b;
-                border: 1px solid rgba(148, 163, 184, 0.25);
-                margin-bottom: 8px;
-            }
-            #SessionContextLabel b { color: #0f172a; }
-            #SessionContextLabel span { font-weight: 600; }
-
-            /* --- Custom Dialog Styles --- */
-            QDialog { background-color: transparent; }
-            #CustomDialogFrame {
-                background-color: #ffffff;
-                border: 1px solid rgba(0,0,0,0.1);
+            }}
+            QLineEdit:focus, QComboBox:focus {{
+                border: 1px solid {palette['accent']};
+                background-color: {palette['surface_alt']};
+            }}
+            QComboBox QListView {{
+                background-color: {palette['surface']};
                 border-radius: 12px;
-            }
-            #CustomTitleBar { 
-                background-color: #f8f9fa;
-                border-top-left-radius: 11px;
-                border-top-right-radius: 11px;
-                border-bottom: 1px solid #e9ecef;
-            }
-            #CustomTitleLabel { font-size: 11pt; font-weight: bold; color: #212529; }
-            #CustomCloseButton {
-                background-color: transparent; color: #6c757d;
-                border: none; font-size: 14pt; font-weight: bold;
-                border-radius: 4px;
-            }
-            #CustomCloseButton:hover { background-color: #dc3545; color: white; }
-            
-            QDialog QLabel { font-size: 11pt; color: #495057; }
-            QDialog QLabel b { color: #212529; }
-            QDialog QLineEdit, QDialog QTextEdit {
-                background-color: #ffffff; color: #212529; border: 1px solid #ced4da;
-                border-radius: 6px; padding: 10px; font-size: 11pt;
-            }
-            QDialog QLineEdit:focus, QDialog QTextEdit:focus { border-color: #86b7fe; }
-
-            QListWidget#SessionsList {
-                border: none;
-                font-size: 13pt;
-                padding: 12px 20px 24px;
-                background: transparent;
-            }
-            QListWidget#SessionsList::item { border: none; padding: 0; }
-            QListWidget#SessionsList::item:selected { background-color: transparent; color: black; border: none; }
-
-            QWidget#HistoryItem { background-color: transparent; }
-            #HistoryItemDate { font-size: 11.5pt; font-weight: 700; color: #1e293b; }
-            #HistoryItemTime { font-size: 9pt; color: #64748b; }
-            #HistoryItemNote { color: #334155; font-size: 13px; }
-            #HistoryItemProfit { font-size: 12pt; font-weight: 800; }
-
-            QPushButton {
-                border: none;
-                padding: 12px 22px;
-                font-size: 10.5pt;
-                font-weight: 700;
-                border-radius: 14px;
-                background: #cbd5f5;
-                color: #1e293b;
-            }
-            QPushButton:disabled { background-color: rgba(148, 163, 184, 0.4); color: #94a3b8; }
-            #PrimaryButton {
-                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #2563eb, stop:1 #1d4ed8);
-                color: white;
-            }
-            #PrimaryButton:hover { background: #1e3a8a; }
-            #SuccessButton {
-                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #22c55e, stop:1 #16a34a);
-                color: white;
-            }
-            #SuccessButton:hover { background: #15803d; }
-            #DangerButton {
-                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #f97316, stop:1 #dc2626);
-                color: white;
-            }
-            #DangerButton:hover { background: #b91c1c; }
-            #SecondaryButton {
-                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #6366f1, stop:1 #4338ca);
-                color: white;
-            }
-            #SecondaryButton:hover { background: #3730a3; }
-
-            QDialogButtonBox QPushButton { background-color: #0d6efd; color: white; }
-            QDialogButtonBox QPushButton:hover { background-color: #0b5ed7; }
-
-            #SummaryContainer {
+                color: {palette['text_primary']};
+            }}
+            QListWidget#SessionsList {{
+                padding: 16px 18px 24px;
                 background: transparent;
                 border: none;
-            }
-            QFrame#SummaryCard {
-                background-color: #ffffff;
-                border-radius: 24px;
-                border: 1px solid rgba(148, 163, 184, 0.25);
-            }
-            QLabel#SummaryCardIcon {
-                background-color: rgba(37, 99, 235, 0.12);
+            }}
+            QWidget#HistoryItem {{
+                background: transparent;
+            }}
+            QFrame#HistoryCard {{
+                border: 1px solid {palette['border']};
                 border-radius: 18px;
-                color: #1d4ed8;
-            }
-            QLabel#SummaryCardTitle { font-size: 12pt; font-weight: 700; color: #64748b; }
-            QLabel#SummaryCardValue { font-size: 26pt; font-weight: 800; color: #0f172a; }
-            QLabel#SummaryCardCaption { font-size: 10pt; color: #64748b; }
-
-            QFrame#SummaryCard[accentColor="emerald"] QLabel#SummaryCardIcon { background-color: rgba(34, 197, 94, 0.18); color: #047857; }
-            QFrame#SummaryCard[accentColor="emerald"] QLabel#SummaryCardValue { color: #047857; }
-            QFrame#SummaryCard[accentColor="orange"] QLabel#SummaryCardIcon { background-color: rgba(249, 115, 22, 0.18); color: #c2410c; }
-            QFrame#SummaryCard[accentColor="orange"] QLabel#SummaryCardValue { color: #c2410c; }
-            QFrame#SummaryCard[accentColor="indigo"] QLabel#SummaryCardIcon { background-color: rgba(99, 102, 241, 0.16); color: #4338ca; }
-            QFrame#SummaryCard[accentColor="indigo"] QLabel#SummaryCardValue { color: #3730a3; }
-            QFrame#SummaryCard[accentColor="cyan"] QLabel#SummaryCardIcon { background-color: rgba(14, 165, 233, 0.2); color: #0e7490; }
-            QFrame#SummaryCard[accentColor="cyan"] QLabel#SummaryCardValue { color: #0e7490; }
-            QFrame#SummaryCard[accentColor="rose"] QLabel#SummaryCardIcon { background-color: rgba(244, 114, 182, 0.2); color: #be123c; }
-            QFrame#SummaryCard[accentColor="rose"] QLabel#SummaryCardValue { color: #be123c; }
-            QFrame#SummaryCard[accentColor="violet"] QLabel#SummaryCardIcon { background-color: rgba(139, 92, 246, 0.18); color: #6d28d9; }
-            QFrame#SummaryCard[accentColor="violet"] QLabel#SummaryCardValue { color: #6d28d9; }
-
-            #Container {
-                background-color: #ffffff;
-                border: 1px solid rgba(148, 163, 184, 0.25);
+                background-color: {palette['surface']};
+            }}
+            QLabel#HistoryItemDate {{
+                font-size: 12pt;
+                color: {palette['text_primary']};
+            }}
+            QLabel#HistoryItemTime {{
+                font-size: 10pt;
+                color: {palette['text_muted']};
+            }}
+            QLabel#HistoryItemNote {{
+                color: {palette['text_primary']};
+            }}
+            QLabel#StatusBadge {{
+                font-size: 10pt;
+                font-weight: 600;
+            }}
+            QPushButton {{
+                border-radius: 16px;
+                padding: 12px 20px;
+                font-size: 10.5pt;
+                font-weight: 600;
+                border: none;
+                background-color: {palette['muted_surface']};
+                color: {palette['text_primary']};
+            }}
+            QPushButton#PrimaryButton {{
+                background-color: {palette['accent']};
+                color: {palette['accent_text']};
+            }}
+            QPushButton#SecondaryButton {{
+                background-color: #0ea5e9;
+                color: #ffffff;
+            }}
+            QPushButton#SuccessButton {{
+                background-color: {palette['success']};
+                color: #ffffff;
+            }}
+            QPushButton#DangerButton {{
+                background-color: {palette['danger']};
+                color: #ffffff;
+            }}
+            QPushButton:hover {{
+                filter: brightness(1.05);
+            }}
+            QPushButton:pressed {{
+                filter: brightness(0.95);
+            }}
+            QPushButton:disabled {{
+                background-color: rgba(148, 163, 184, 0.25);
+                color: rgba(15, 23, 42, 0.4);
+            }}
+            QToolButton#ThemeToggle {{
+                padding: 12px 20px;
+                border-radius: 18px;
+                background-color: {palette['muted_surface']};
+                color: {palette['text_muted']};
+            }}
+            QToolButton#ThemeToggle:checked {{
+                background-color: {palette['accent']};
+                color: {palette['accent_text']};
+            }}
+            QLabel#SessionContextLabel {{
+                background-color: {palette['muted_surface']};
+                border: 1px solid {palette['border']};
+                border-radius: 16px;
+                padding: 18px;
+                color: {palette['text_primary']};
+                font-size: 11.5pt;
+            }}
+            #SummaryContainer {{
+                background-color: {palette['surface']};
+                border-radius: 24px;
+                border: 1px solid {palette['border']};
+            }}
+            QFrame#SummaryCard {{
+                background-color: {palette['surface']};
+                border-radius: 20px;
+                border: 1px solid {palette['border']};
+                padding: 20px 22px;
+            }}
+            QLabel#SummaryCardIcon {{
+                border-radius: 18px;
+                min-width: 44px;
+                min-height: 44px;
+                font-size: 20pt;
+            }}
+            QLabel#SummaryCardTitle {{ font-size: 12pt; font-weight: 700; color: {palette['text_muted']}; }}
+            QLabel#SummaryCardValue {{ font-size: 26pt; font-weight: 800; color: {palette['text_primary']}; }}
+            QLabel#SummaryCardCaption {{ font-size: 10pt; color: {palette['text_muted']}; }}
+            QWidget#OverviewBar {{
+                background-color: {palette['surface']};
+                border-radius: 24px;
+                border: 1px solid {palette['border']};
+            }}
+            #Container {{
+                background-color: {palette['surface']};
+                border: 1px solid {palette['border']};
                 border-radius: 20px;
                 padding: 24px;
-            }
-            #SectionTitle {
+            }}
+            #SectionTitle {{
                 font-size: 15.5pt;
                 font-weight: 700;
-                color: #0f172a;
+                color: {palette['text_primary']};
                 margin-bottom: 18px;
-            }
-            QTableWidget {
-                border: none; font-size: 11pt; background-color: #ffffff;
-                gridline-color: #e9ecef; alternate-background-color: #f8f9fa;
-                color: #212529;
-                selection-background-color: #cfe2ff;
-                selection-color: #000;
-            }
-            QHeaderView::section {
-                background-color: #f8f9fa; padding: 14px 10px; border: none;
-                border-bottom: 2px solid #dee2e6; font-weight: 700; font-size: 10pt;
-                color: #495057;
-            }
-            QTableWidget::item { 
-                padding: 12px 10px; 
-                border-bottom: 1px solid #f0f1f3;
-            }
-             QTableWidget::item:selected {
-                background-color: #cfe2ff;
-                color: #212529;
-            }
-            QTextEdit {
-                border: 1px solid #ced4da; border-radius: 8px; padding: 12px;
-                font-size: 11pt; background-color: #f8f9fa; color: #212529;
-            }
-            QTextEdit::placeholder { color: #6c757d; }
-            QTextEdit:focus { 
-                border: 1px solid #86b7fe; 
-                background-color: #ffffff;
-            }
-            QSplitter::handle { background: #dee2e6; }
-            QSplitter::handle:vertical { height: 1px; }
-            QSplitter::handle:horizontal { width: 1px; }
-
-            /* Report Dialog Specifics */
-            #ReportTitle { font-size: 14pt; font-weight: bold; color: #198754; }
-            #NegativeValue { color: #dc3545; font-weight: bold; }
-            #PositiveValue { color: #198754; font-weight: bold; }
-            #Separator { background-color: #e9ecef; height: 1px; border: none; }
+            }}
+            QTabWidget#NavigationTabs::pane {{
+                border: none;
+            }}
+            QTabWidget#NavigationTabs::tab-bar {{
+                left: 0px;
+            }}
+            QTabBar::tab {{
+                background: transparent;
+                margin: 6px 0;
+                padding: 14px 18px;
+                min-width: 160px;
+                border-radius: 18px;
+                color: {palette['text_muted']};
+            }}
+            QTabBar::tab:selected {{
+                background: {palette['surface']};
+                color: {palette['text_primary']};
+                font-weight: 700;
+                border: 1px solid {palette['accent_border']};
+            }}
+            QTabBar::tab:hover {{
+                background: {palette['muted_surface']};
+            }}
+            QTableWidget {{
+                border: none;
+                font-size: 11pt;
+                background-color: {palette['surface']};
+                gridline-color: {palette['border']};
+                alternate-background-color: {palette['surface_alt']};
+                color: {palette['text_primary']};
+                selection-background-color: {palette['accent']};
+                selection-color: {palette['accent_text']};
+            }}
+            QHeaderView::section {{
+                background-color: {palette['surface_alt']};
+                padding: 14px 10px;
+                border: none;
+                border-bottom: 2px solid {palette['border']};
+                font-weight: 700;
+                font-size: 10pt;
+                color: {palette['text_muted']};
+            }}
+            QTextEdit {{
+                border: 1px solid {palette['border']};
+                border-radius: 14px;
+                padding: 12px;
+                font-size: 11pt;
+                background-color: {palette['surface']};
+                color: {palette['text_primary']};
+            }}
+            QTextEdit:focus {{
+                border: 1px solid {palette['accent']};
+                background-color: {palette['surface_alt']};
+            }}
+            QSplitter::handle {{ background: {palette['border']}; }}
+            QSplitter::handle:vertical {{ height: 1px; }}
+            QSplitter::handle:horizontal {{ width: 1px; }}
         """
+
+        for accent_name, colors in accent_styles.items():
+            stylesheet += (
+                f"QFrame#SummaryCard[accentColor=\"{accent_name}\"] QLabel#SummaryCardIcon {{ "
+                f"background-color: {colors['bg']}; color: {colors['color']}; }}"
+            )
+            stylesheet += (
+                f"QFrame#SummaryCard[accentColor=\"{accent_name}\"] QLabel#SummaryCardValue {{ "
+                f"color: {colors['color']}; }}"
+            )
+
         self.setStyleSheet(stylesheet)
-        self.transactions_table.setAlternatingRowColors(True)
-        self.flexi_transactions_table.setAlternatingRowColors(True)
+
+        tables = [
+            getattr(self, "transactions_table", None),
+            getattr(self, "flexi_transactions_table", None),
+            getattr(self, "global_expenses_table", None),
+            getattr(self, "global_flexi_table", None),
+        ]
+        for table in tables:
+            if table:
+                table.setAlternatingRowColors(True)
 
     def load_user_sessions_history(self):
         # Fix #6: Sessions Ordering - This was already correct.
@@ -1389,6 +1986,10 @@ class UserDashboard(QMainWindow):
         self.all_sessions = sessions
         preferred_id = self.selected_session_id or (self.current_session.id if self.current_session else None)
         self.populate_sessions_list(sessions, preferred_id=preferred_id)
+        self.refresh_dashboard_overview()
+        self.refresh_global_expenses_table()
+        self.refresh_global_flexi_table()
+        self.refresh_analytics_charts()
 
     def populate_sessions_list(self, sessions, preferred_id=None):
         self.sessions_history_list.blockSignals(True)
@@ -1422,24 +2023,32 @@ class UserDashboard(QMainWindow):
         if not self.all_sessions:
             return
 
-        query = (text or "").strip().lower()
-        if not query:
-            filtered = self.all_sessions
-        else:
-            filtered = []
-            for session in self.all_sessions:
-                note = (session.notes or "").lower()
-                status = (session.status or "").lower()
-                session_id_str = str(session.id)
-                start_time_str = session.start_time.strftime('%d/%m/%Y %H:%M') if session.start_time else ""
-                user_name = getattr(session.user, 'username', '')
-                user_name_lower = user_name.lower() if user_name else ""
+        status_value = None
+        if hasattr(self, "session_status_filter") and self.session_status_filter is not None:
+            status_value = self.session_status_filter.currentData()
 
-                if any(
-                    query in field
-                    for field in [note, status, session_id_str, start_time_str.lower(), user_name_lower]
-                ):
-                    filtered.append(session)
+        query = (text or "").strip().lower()
+        filtered = []
+        for session in self.all_sessions:
+            if status_value and getattr(session, "status", None) != status_value:
+                continue
+
+            if not query:
+                filtered.append(session)
+                continue
+
+            note = (session.notes or "").lower()
+            status = (session.status or "").lower()
+            session_id_str = str(session.id)
+            start_time_str = session.start_time.strftime('%d/%m/%Y %H:%M') if session.start_time else ""
+            user_name = getattr(session.user, 'username', '')
+            user_name_lower = user_name.lower() if user_name else ""
+
+            if any(
+                query in field
+                for field in [note, status, session_id_str, start_time_str.lower(), user_name_lower]
+            ):
+                filtered.append(session)
 
         preferred_id = self.selected_session_id or (self.current_session.id if self.current_session else None)
         self.populate_sessions_list(filtered, preferred_id=preferred_id)
@@ -1841,6 +2450,10 @@ class UserDashboard(QMainWindow):
             self.current_session = new_session
             self.load_user_sessions_history()
             self.check_for_open_session()
+            self.refresh_dashboard_overview()
+            self.refresh_global_expenses_table()
+            self.refresh_global_flexi_table()
+            self.refresh_analytics_charts()
 
     def add_expense(self):
         if not self.current_session or self.current_session.status != 'open':
@@ -1862,6 +2475,9 @@ class UserDashboard(QMainWindow):
             self.db_session.refresh(self.current_session)
             self.load_transactions(self.current_session)
             self.update_summary_display(self.current_session)
+            self.refresh_dashboard_overview()
+            self.refresh_global_expenses_table()
+            self.refresh_analytics_charts()
             
     def add_flexi(self):
         if not self.current_session or self.current_session.status != 'open':
@@ -1882,9 +2498,12 @@ class UserDashboard(QMainWindow):
                     print("IntegrityError عند إضافة فليكسي:", e)
                     return
                 
-                self.db_session.refresh(self.current_session)
-            self.load_flexi_transactions(self.current_session)
-            self.update_summary_display(self.current_session)
+            self.db_session.refresh(self.current_session)
+        self.load_flexi_transactions(self.current_session)
+        self.update_summary_display(self.current_session)
+        self.refresh_dashboard_overview()
+        self.refresh_global_flexi_table()
+        self.refresh_analytics_charts()
 
     def open_transaction_menu(self, position):
         if not self.current_session or self.current_session.status == 'closed':
@@ -1936,6 +2555,9 @@ class UserDashboard(QMainWindow):
                 pass
             self.load_transactions(self.current_session)
             self.update_summary_display(self.current_session)
+            self.refresh_dashboard_overview()
+            self.refresh_global_expenses_table()
+            self.refresh_analytics_charts()
             
     def delete_transaction(self, transaction_to_delete):
         if CustomMessageBox.show_question(self, 'تأكيد الحذف', f"هل أنت متأكد من حذف هذا المصروف؟"):
@@ -1955,6 +2577,9 @@ class UserDashboard(QMainWindow):
                 pass
             self.load_transactions(self.current_session)
             self.update_summary_display(self.current_session)
+            self.refresh_dashboard_overview()
+            self.refresh_global_expenses_table()
+            self.refresh_analytics_charts()
 
     def close_cash_session(self):
         if not self.current_session: return
