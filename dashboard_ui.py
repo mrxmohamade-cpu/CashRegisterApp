@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QSplitter,
+    QScrollArea,
     QStackedLayout,
     QVBoxLayout,
     QWidget,
@@ -44,18 +44,19 @@ from database_setup import CashSession, FlexiTransaction, SessionLocal, Transact
 from ui_helpers import (
     ChartPlaceholder,
     CloseSessionDialog,
+    ExpenseDialog,
     FlexiDialog,
     FlexiTable,
     ModernDashboardWindow,
     NotesPanel,
     OpenSessionDialog,
     RecordTable,
+    ResponsiveSplitter,
     SessionDetailCard,
-    SessionTable,
+    SessionHistoryList,
     StatisticGrid,
     SummaryCard,
     TransactionTable,
-    ExpenseDialog,
     create_shadow,
     format_currency,
     format_datetime,
@@ -374,26 +375,32 @@ class UserDashboard(ModernDashboardWindow):
         actions_layout.addStretch(1)
         layout.addWidget(actions_frame)
 
-        splitter = QSplitter()
+        splitter = ResponsiveSplitter()
         splitter.setObjectName("SessionsSplitter")
 
         left_panel = QFrame()
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(12)
+        left_layout.setSpacing(14)
 
         sessions_label = QLabel("الجلسات")
         sessions_label.setObjectName("SectionSubtitle")
         left_layout.addWidget(sessions_label)
 
-        self.sessions_table = SessionTable()
-        self.sessions_table.itemSelectionChanged.connect(self.handle_session_selection)
-        left_layout.addWidget(self.sessions_table)
+        self.sessions_list = SessionHistoryList()
+        self.sessions_list.currentRowChanged.connect(self.handle_session_selection)
+        left_layout.addWidget(self.sessions_list)
 
         splitter.addWidget(left_panel)
 
-        right_panel = QFrame()
-        right_layout = QVBoxLayout(right_panel)
+        right_scroll = QScrollArea()
+        right_scroll.setObjectName("SessionDetailScroll")
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        right_container = QFrame()
+        right_container.setFrameShape(QFrame.Shape.NoFrame)
+        right_layout = QVBoxLayout(right_container)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(18)
 
@@ -435,8 +442,10 @@ class UserDashboard(ModernDashboardWindow):
         flexi_layout.addWidget(self.flexi_table)
         create_shadow(flexi_frame, blur=32, y_offset=16, alpha=60)
         right_layout.addWidget(flexi_frame)
+        right_layout.addStretch(1)
 
-        splitter.addWidget(right_panel)
+        right_scroll.setWidget(right_container)
+        splitter.addWidget(right_scroll)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 4)
 
@@ -506,7 +515,7 @@ class UserDashboard(ModernDashboardWindow):
 
         sessions: Sequence[Dict] = data["sessions"]  # type: ignore[assignment]
         previous_id = self.current_session_id
-        self.sessions_table.set_sessions(sessions)
+        self.sessions_list.set_sessions(sessions)
         if sessions:
             target_row = 0
             if previous_id is not None:
@@ -519,7 +528,7 @@ class UserDashboard(ModernDashboardWindow):
                     if item["id"] == self.active_session.id:
                         target_row = index
                         break
-            self.sessions_table.selectRow(target_row)
+            self.sessions_list.setCurrentRow(target_row)
             self.handle_session_selection()
         else:
             self.current_session = None
@@ -536,6 +545,7 @@ class UserDashboard(ModernDashboardWindow):
         self._update_flexi(data["flexi"])  # type: ignore[arg-type]
         self._update_trend_chart(data["trend"])  # type: ignore[arg-type]
         self._update_pie_chart(data["pie"])  # type: ignore[arg-type]
+        self._update_responsive_layouts()
 
     def _update_recent_sessions(self, sessions: Sequence[Dict]) -> None:
         rows = []
@@ -708,13 +718,26 @@ class UserDashboard(ModernDashboardWindow):
             button.setEnabled(is_selected_open)
         self.notes_panel.set_editable(bool(is_selected_open))
 
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._update_responsive_layouts()
+
+    def _update_responsive_layouts(self) -> None:
+        available_width = max(self.surface.width() - 64, 360)
+        if available_width < 960:
+            self.charts_layout.setDirection(QBoxLayout.Direction.TopToBottom)
+        else:
+            self.charts_layout.setDirection(QBoxLayout.Direction.LeftToRight)
+        self.summary_grid.update_layout(available_width)
+
     # ------------------------------------------------------------------
     # Interactions
     # ------------------------------------------------------------------
 
-    def handle_session_selection(self) -> None:
-        row = self.sessions_table.currentRow()
-        session = self.sessions_table.session_at(row)
+    def handle_session_selection(self, row: Optional[int] = None) -> None:
+        if row is None or row < 0:
+            row = self.sessions_list.currentRow()
+        session = self.sessions_list.session_at(row)
         self._display_session(session)
 
     def _display_session(self, session: Optional[Dict]) -> None:

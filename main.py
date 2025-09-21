@@ -223,11 +223,11 @@ class LoginWindow(QMainWindow):
             }
             #BrandSubtitle {
                 font-size: 13pt;
-                color: rgba(248, 250, 252, 0.94);
+                color: #f8fafc;
             }
             #BrandPoints {
                 font-size: 11.5pt;
-                color: rgba(241, 245, 249, 0.95);
+                color: rgba(241, 245, 249, 0.98);
             }
             #BrandFooter {
                 font-size: 9pt;

@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Optional, Sequence
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QItemSelectionModel, Qt
 from PyQt6.QtGui import QColor, QDoubleValidator
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QBoxLayout,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
@@ -17,11 +18,15 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLayout,
+    QListView,
+    QListWidget,
+    QListWidgetItem,
     QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
     QSizePolicy,
+    QSplitter,
     QStackedLayout,
     QStackedWidget,
     QTableWidget,
@@ -223,6 +228,8 @@ class SessionDetailCard(QFrame):
         detail_layout.setContentsMargins(0, 0, 0, 0)
         detail_layout.setHorizontalSpacing(18)
         detail_layout.setVerticalSpacing(12)
+        detail_layout.setColumnStretch(0, 0)
+        detail_layout.setColumnStretch(1, 1)
 
         self.detail_labels: Dict[str, QLabel] = {}
         fields = [
@@ -248,6 +255,8 @@ class SessionDetailCard(QFrame):
             detail_layout.addWidget(label, row, 0)
             detail_layout.addWidget(value_label, row, 1)
             self.detail_labels[key] = value_label
+
+        detail_layout.setRowStretch(len(fields) - 1, 1)
 
         self.stack.addWidget(self.empty_state)
         self.stack.addWidget(self.detail_widget)
@@ -288,6 +297,195 @@ class SessionDetailCard(QFrame):
         self.detail_labels["notes"].setText(notes)
 
         self.stack.setCurrentWidget(self.detail_widget)
+
+
+class SessionCardWidget(QFrame):
+    """Card used in the responsive session history list."""
+
+    def __init__(self, session: Dict, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("SessionCard")
+        self.setProperty("selected", False)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(12)
+
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(12)
+
+        self.date_label = QLabel("—")
+        self.date_label.setObjectName("SessionDate")
+        self.date_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        self.status_chip = QLabel("—")
+        self.status_chip.setObjectName("StatusChip")
+        self.status_chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_chip.setMinimumWidth(86)
+
+        header_layout.addWidget(self.date_label)
+        header_layout.addStretch(1)
+        header_layout.addWidget(self.status_chip)
+
+        layout.addLayout(header_layout)
+
+        self.recent_label = QLabel("—")
+        self.recent_label.setObjectName("RecentLabel")
+        self.recent_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.recent_label)
+
+        metrics_layout = QGridLayout()
+        metrics_layout.setContentsMargins(0, 0, 0, 0)
+        metrics_layout.setHorizontalSpacing(18)
+        metrics_layout.setVerticalSpacing(4)
+
+        self.metric_labels: Dict[str, QLabel] = {}
+        metrics = [
+            ("income", "الدخل"),
+            ("expense", "المصاريف"),
+            ("profit", "الربح"),
+        ]
+        for column, (key, caption) in enumerate(metrics):
+            value_label = QLabel("—")
+            value_label.setObjectName("MetricValue")
+            value_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+            caption_label = QLabel(caption)
+            caption_label.setObjectName("MetricLabel")
+            caption_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+            metrics_layout.addWidget(value_label, 0, column)
+            metrics_layout.addWidget(caption_label, 1, column)
+            metrics_layout.setColumnStretch(column, 1)
+            self.metric_labels[key] = value_label
+
+        layout.addLayout(metrics_layout)
+
+        self.notes_preview = QLabel("—")
+        self.notes_preview.setObjectName("NotesPreview")
+        self.notes_preview.setWordWrap(True)
+        self.notes_preview.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.notes_preview.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.notes_preview)
+
+        create_shadow(self, blur=32, y_offset=16, alpha=60)
+
+        self.update_session(session)
+
+    def update_session(self, session: Dict) -> None:
+        self.date_label.setText(session.get("start_display", "—"))
+        status = session.get("status", "closed")
+        status_text = "مفتوحة" if status == "open" else "مغلقة"
+        self.status_chip.setText(status_text)
+        self.status_chip.setProperty("status", status)
+        self.status_chip.style().unpolish(self.status_chip)
+        self.status_chip.style().polish(self.status_chip)
+        self.setProperty("status", status)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+        recent_display = session.get("recent_display") or session.get("end_display") or "—"
+        self.recent_label.setText(f"آخر تحديث: {recent_display}")
+
+        self.metric_labels["income"].setText(format_currency(session.get("income", 0.0)))
+        self.metric_labels["expense"].setText(format_currency(session.get("expense", 0.0)))
+        self.metric_labels["profit"].setText(format_currency(session.get("profit", 0.0)))
+
+        notes = session.get("notes") or "لا توجد ملاحظات"
+        self.notes_preview.setText(notes)
+        self.notes_preview.setToolTip(notes)
+
+    def set_selected(self, selected: bool) -> None:
+        self.setProperty("selected", selected)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+
+class SessionHistoryList(QListWidget):
+    """Responsive list that renders sessions as modern cards."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._sessions: List[Dict] = []
+        self.setObjectName("SessionHistoryList")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setSpacing(12)
+        self.setUniformItemSizes(False)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setResizeMode(QListView.ResizeMode.Adjust)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+
+    def set_sessions(self, sessions: Sequence[Dict]) -> None:
+        self._sessions = list(sessions)
+        self.blockSignals(True)
+        self.clear()
+        for session in self._sessions:
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, session.get("id"))
+            card = SessionCardWidget(session)
+            item.setSizeHint(card.sizeHint())
+            self.addItem(item)
+            self.setItemWidget(item, card)
+        self.blockSignals(False)
+        self._refresh_selection_styles()
+
+    def session_at(self, row: int) -> Optional[Dict]:
+        if 0 <= row < len(self._sessions):
+            return self._sessions[row]
+        return None
+
+    def clear_sessions(self) -> None:
+        self._sessions = []
+        self.clear()
+
+    def selectRow(self, row: int) -> None:
+        self.setCurrentRow(row)
+
+    def setCurrentRow(
+        self,
+        row: int,
+        mode: QItemSelectionModel.SelectionFlag = QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    ) -> None:
+        super().setCurrentRow(row, mode)
+        self._refresh_selection_styles()
+
+    def selectionChanged(self, selected, deselected) -> None:  # type: ignore[override]
+        super().selectionChanged(selected, deselected)
+        self._refresh_selection_styles()
+
+    def _refresh_selection_styles(self) -> None:
+        for index in range(self.count()):
+            item = self.item(index)
+            widget = self.itemWidget(item)
+            if isinstance(widget, SessionCardWidget):
+                widget.set_selected(item.isSelected())
+
+
+class ResponsiveSplitter(QSplitter):
+    """Splitter that flips orientation when width is below a breakpoint."""
+
+    def __init__(self, parent: Optional[QWidget] = None, *, breakpoint: int = 1160) -> None:
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self._breakpoint = breakpoint
+        self.setChildrenCollapsible(False)
+        self.setHandleWidth(14)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._apply_orientation(event.size().width())
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        self._apply_orientation(self.width())
+
+    def _apply_orientation(self, width: int) -> None:
+        if width <= 0:
+            return
+        orientation = Qt.Orientation.Vertical if width < self._breakpoint else Qt.Orientation.Horizontal
+        if orientation != self.orientation():
+            self.setOrientation(orientation)
 
 
 class SessionTable(QTableWidget):
@@ -357,6 +555,7 @@ class RecordTable(QTableWidget):
         self._numeric_columns = set(numeric_columns or [])
         self.setHorizontalHeaderLabels(headers)
         self.setAlternatingRowColors(True)
+        self.setWordWrap(True)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -379,6 +578,7 @@ class RecordTable(QTableWidget):
                     align |= Qt.AlignmentFlag.AlignLeft
                 item.setTextAlignment(int(align))
                 self.setItem(row_index, column, item)
+        self.resizeRowsToContents()
 
 
 class NotesPanel(QFrame):
@@ -428,6 +628,7 @@ class TransactionTable(QTableWidget):
         self.setObjectName("TransactionTable")
         self.setHorizontalHeaderLabels(self.HEADERS)
         self.setAlternatingRowColors(True)
+        self.setWordWrap(True)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -448,6 +649,8 @@ class TransactionTable(QTableWidget):
 
             description = getattr(transaction, "description", "") or "—"
             desc_item = QTableWidgetItem(description)
+            desc_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+            desc_item.setTextAlignment(int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter))
 
             amount_text = format_currency(getattr(transaction, "amount", 0.0))
             amount_item = QTableWidgetItem(amount_text)
@@ -461,7 +664,7 @@ class TransactionTable(QTableWidget):
             self.setItem(row - 1, 1, desc_item)
             self.setItem(row - 1, 2, amount_item)
             self.setItem(row - 1, 3, time_item)
-            self.setRowHeight(row - 1, 44)
+        self.resizeRowsToContents()
 
     def transaction_at(self, row: int):
         if 0 <= row < len(self._transactions):
@@ -484,6 +687,7 @@ class FlexiTable(QTableWidget):
         self.setObjectName("FlexiTable")
         self.setHorizontalHeaderLabels(self.HEADERS)
         self.setAlternatingRowColors(True)
+        self.setWordWrap(True)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -505,6 +709,8 @@ class FlexiTable(QTableWidget):
 
             description = getattr(record, "description", "") or "—"
             desc_item = QTableWidgetItem(description)
+            desc_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+            desc_item.setTextAlignment(int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter))
 
             amount_text = format_currency(getattr(record, "amount", 0.0))
             amount_item = QTableWidgetItem(amount_text)
@@ -524,7 +730,7 @@ class FlexiTable(QTableWidget):
             self.setItem(row - 1, 2, amount_item)
             self.setItem(row - 1, 3, status_item)
             self.setItem(row - 1, 4, time_item)
-            self.setRowHeight(row - 1, 44)
+        self.resizeRowsToContents()
 
     def record_at(self, row: int):
         if 0 <= row < len(self._records):
@@ -771,13 +977,16 @@ class ModernDashboardWindow(QMainWindow):
         root_layout = QHBoxLayout(central)
         root_layout.setContentsMargins(32, 32, 32, 32)
         root_layout.setSpacing(24)
+        self._root_layout = root_layout
 
         # Sidebar
         self.sidebar = QFrame()
         self.sidebar.setObjectName("Sidebar")
+        self.sidebar.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
         sidebar_layout = QVBoxLayout(self.sidebar)
         sidebar_layout.setContentsMargins(24, 28, 24, 28)
         sidebar_layout.setSpacing(20)
+        self._sidebar_layout = sidebar_layout
 
         brand_container = QVBoxLayout()
         brand_container.setContentsMargins(0, 0, 0, 0)
@@ -808,9 +1017,11 @@ class ModernDashboardWindow(QMainWindow):
         self.surface = QFrame()
         self.surface.setObjectName("DashboardSurface")
         create_shadow(self.surface, blur=42, y_offset=26, alpha=90)
+        self.surface.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         surface_layout = QVBoxLayout(self.surface)
         surface_layout.setContentsMargins(32, 32, 32, 32)
         surface_layout.setSpacing(24)
+        self._surface_layout = surface_layout
 
         header_frame = QFrame()
         header_frame.setObjectName("HeaderFrame")
@@ -857,6 +1068,7 @@ class ModernDashboardWindow(QMainWindow):
         self.refresh_button.clicked.connect(self._handle_refresh_click)
 
         apply_dashboard_styles(self)
+        self._apply_shell_mode(self.width())
 
     # -- Sidebar helpers -------------------------------------------------
 
@@ -913,6 +1125,28 @@ class ModernDashboardWindow(QMainWindow):
             self.refresh_dashboard()
         except NotImplementedError:
             pass
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._apply_shell_mode(event.size().width())
+
+    def _apply_shell_mode(self, width: int) -> None:
+        if width <= 0:
+            width = self.width()
+        if width < 1250:
+            self._root_layout.setDirection(QBoxLayout.Direction.TopToBottom)
+            self._root_layout.setSpacing(20)
+            self.sidebar.setMaximumHeight(320)
+            self.sidebar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            self.surface.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            self.sidebar_footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        else:
+            self._root_layout.setDirection(QBoxLayout.Direction.LeftToRight)
+            self._root_layout.setSpacing(24)
+            self.sidebar.setMaximumHeight(16777215)
+            self.sidebar.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+            self.surface.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            self.sidebar_footer.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
     def refresh_dashboard(self) -> None:  # pragma: no cover - meant to be overridden
         raise NotImplementedError
@@ -1091,6 +1325,76 @@ QPushButton[isNav="true"]:checked {
 #NotesEditor:disabled {
     color: #64748b;
 }
+#SessionHistoryList {
+    background-color: transparent;
+    border: none;
+}
+#SessionHistoryList::item {
+    margin: 0 0 12px 0;
+}
+#SessionHistoryList::item:selected,
+#SessionHistoryList::item:hover {
+    background: transparent;
+}
+#SessionCard {
+    background-color: #111827;
+    border-radius: 22px;
+    border: 1px solid transparent;
+}
+#SessionCard[selected="true"] {
+    border: 1px solid rgba(59, 130, 246, 0.45);
+    background-color: #0b152b;
+}
+#SessionCard[status="open"] {
+    border: 1px solid rgba(34, 197, 94, 0.28);
+}
+#SessionCard[status="closed"] {
+    border: 1px solid rgba(148, 163, 184, 0.14);
+}
+#SessionCard[status="open"][selected="true"],
+#SessionCard[status="closed"][selected="true"] {
+    border: 1px solid rgba(59, 130, 246, 0.45);
+}
+#SessionCard QLabel {
+    color: #cbd5f5;
+}
+#SessionCard QLabel#SessionDate {
+    font-size: 11.5pt;
+    font-weight: 600;
+    color: #f8fafc;
+}
+#SessionCard QLabel#RecentLabel {
+    font-size: 9.8pt;
+    color: #64748b;
+}
+#SessionCard QLabel#MetricLabel {
+    font-size: 9.6pt;
+    color: #94a3b8;
+}
+#SessionCard QLabel#MetricValue {
+    font-size: 12.2pt;
+    font-weight: 700;
+    color: #f8fafc;
+}
+#SessionCard QLabel#NotesPreview {
+    font-size: 10pt;
+    color: #94a3b8;
+}
+#StatusChip {
+    border-radius: 14px;
+    padding: 6px 16px;
+    font-weight: 600;
+    background-color: rgba(148, 163, 184, 0.18);
+    color: #e2e8f0;
+}
+#StatusChip[status="open"] {
+    background-color: rgba(34, 197, 94, 0.18);
+    color: #4ade80;
+}
+#StatusChip[status="closed"] {
+    background-color: rgba(239, 68, 68, 0.18);
+    color: #f87171;
+}
 #StatusBadge {
     border-radius: 12px;
     padding: 6px 14px;
@@ -1105,6 +1409,17 @@ QPushButton[isNav="true"]:checked {
 #StatusBadge[status="closed"] {
     background-color: rgba(239, 68, 68, 0.18);
     color: #f87171;
+}
+QScrollArea#SessionDetailScroll {
+    background: transparent;
+    border: none;
+}
+QScrollArea#SessionDetailScroll > QWidget > QWidget {
+    background: transparent;
+}
+QSplitter#SessionsSplitter::handle {
+    background-color: transparent;
+    margin: 0 6px;
 }
 QTableWidget {
     background-color: #0f172a;
