@@ -1,2916 +1,556 @@
-import sys
-import datetime
-import importlib
-from datetime import timezone
-from typing import Optional, TYPE_CHECKING, Any
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QLabel, QPushButton, QTableWidget, QTableWidgetItem, QDialog,
-                             QLineEdit, QDialogButtonBox, QListWidget,
-                             QListWidgetItem, QTextEdit, QSplitter, QHeaderView,
-                             QStyle, QFrame, QSizePolicy, QMenu, QFormLayout, QCheckBox,
-                             QGridLayout, QGraphicsDropShadowEffect, QScrollArea, QTabWidget,
-                             QComboBox, QToolButton)
-from PyQt6.QtGui import QColor, QDoubleValidator, QMouseEvent, QFont, QAction, QPainter
-from PyQt6.QtCore import Qt, QSize, QPoint, QEvent, QTimer, QDateTime, pyqtSignal
+"""Modern cashier dashboard with a clean, responsive layout."""
+from __future__ import annotations
 
-if TYPE_CHECKING:  # pragma: no cover - typing helper
-    from PyQt6.QtCharts import QChart as ChartBase
-else:  # pragma: no cover - runtime fallback type
-    ChartBase = Any
+from collections import defaultdict
+from typing import Dict, List, Optional, Sequence
 
-QTCHARTS_AVAILABLE = False
-QChart = QChartView = QLineSeries = QPieSeries = QDateTimeAxis = QValueAxis = None
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPainter
+from PyQt6.QtWidgets import (
+    QBoxLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QStackedLayout,
+    QVBoxLayout,
+    QWidget,
+)
 
 try:
-    qtcharts = importlib.import_module("PyQt6.QtCharts")
-except Exception:  # pragma: no cover - optional dependency
-    qtcharts = None
-else:  # pragma: no cover - optional dependency
-    QChart = getattr(qtcharts, "QChart", None)
-    QChartView = getattr(qtcharts, "QChartView", None)
-    QLineSeries = getattr(qtcharts, "QLineSeries", None)
-    QPieSeries = getattr(qtcharts, "QPieSeries", None)
-    QDateTimeAxis = getattr(qtcharts, "QDateTimeAxis", None)
-    QValueAxis = getattr(qtcharts, "QValueAxis", None)
-    QTCHARTS_AVAILABLE = all(
-        component is not None
-        for component in (QChart, QChartView, QLineSeries, QPieSeries, QDateTimeAxis, QValueAxis)
+    from PyQt6.QtCharts import (
+        QCategoryAxis,
+        QChart,
+        QChartView,
+        QLineSeries,
+        QPieSeries,
+        QValueAxis,
     )
 
-from ui_helpers import FlowLayout
-
-
-# Safe stub for AddTransactionDialog to satisfy linters (replace with real dialog in project)
-if "AddTransactionDialog" not in globals():
-    from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QDialogButtonBox, QDoubleSpinBox, QHBoxLayout
-    from PyQt6.QtGui import QFont
-
-    class AddTransactionDialog(QDialog):
-        """Modern, larger Add / Edit expense dialog used when a real implementation
-        isn't available. Returns `self.transaction_data = {amount, description}` when
-        accepted.
-        """
-        def __init__(self, parent=None, transaction=None):
-            super().__init__(parent)
-            self.setWindowTitle("إضافة / تعديل مصروف")
-            self.transaction_data = None
-
-            self.setModal(True)
-            self.setFixedWidth(480)
-
-            title_font = QFont()
-            title_font.setPointSize(12)
-            title_font.setBold(True)
-
-            label_font = QFont()
-            label_font.setPointSize(11)
-
-            self.main_layout = QVBoxLayout()
-            self.main_layout.setSpacing(12)
-            
-            # -- تعديل --: إضافة تخطيط لتعبئة المساحة
-            content_frame = QFrame()
-            content_frame.setObjectName("CustomDialogFrame")
-            content_layout = QVBoxLayout(content_frame)
-            
-            # -- تعديل --: إضافة شريط العنوان
-            self.title_bar = QWidget()
-            self.title_bar.setObjectName("CustomTitleBar")
-            self.title_bar.setFixedHeight(40)
-            title_bar_layout = QHBoxLayout(self.title_bar)
-            title_bar_layout.setContentsMargins(15, 0, 5, 0)
-            title_label = QLabel("إضافة / تعديل مصروف")
-            title_label.setObjectName("CustomTitleLabel")
-            close_button = QPushButton("✕")
-            close_button.setObjectName("CustomCloseButton")
-            close_button.setFixedSize(30, 30)
-            close_button.clicked.connect(self.reject)
-            title_bar_layout.addWidget(title_label)
-            title_bar_layout.addStretch()
-            title_bar_layout.addWidget(close_button)
-            
-            self.content_widget = QWidget()
-            self.content_layout = QVBoxLayout(self.content_widget)
-            self.content_layout.setContentsMargins(20, 15, 20, 20)
-            self.content_layout.setSpacing(10)
-            
-            content_layout.addWidget(self.title_bar)
-            content_layout.addWidget(self.content_widget)
-            self.main_layout.addWidget(content_frame)
-
-            self.setLayout(self.main_layout)
-
-            # -- تعديل: استبدال QDoubleSpinBox بـ QLineEdit مع مدقق (validator)
-            amount_label = QLabel("المبلغ:")
-            amount_label.setFont(label_font)
-            self.amount_input = QLineEdit()
-            self.amount_input.setValidator(QDoubleValidator(0.00, 9999999999.99, 2))
-            self.amount_input.setPlaceholderText("0.00")
-            self.amount_input.setFixedHeight(36)
-            self.amount_input.setStyleSheet("font-size:12pt; padding:4px;")
-            self.content_layout.addWidget(amount_label)
-            self.content_layout.addWidget(self.amount_input)
-            
-            desc_label = QLabel("الملاحظة:")
-            desc_label.setFont(label_font)
-            self.desc_input = QLineEdit()
-            self.desc_input.setPlaceholderText("وصف المصروف، مثلاً: أدوات مكتبية")
-            self.desc_input.setFixedHeight(36)
-            self.desc_input.setStyleSheet("font-size:11.5pt; padding:6px;")
-            self.content_layout.addWidget(desc_label)
-            self.content_layout.addWidget(self.desc_input)
-
-            btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-            btns.accepted.connect(self.accept)
-            btns.rejected.connect(self.reject)
-            self.content_layout.addWidget(btns)
-
-            # pre-fill when editing
-            if transaction is not None:
-                try:
-                    if getattr(transaction, 'amount', None) is not None:
-                        # -- تعديل: استخدام setText بدلاً من setValue
-                        self.amount_input.setText(f"{transaction.amount:.2f}")
-                    self.desc_input.setText(transaction.description or "")
-                except Exception:
-                    pass
-
-        def accept(self):
-            amt = None
-            try:
-                # -- تعديل: الحصول على النص من QLineEdit
-                amt = float(self.amount_input.text().strip())
-            except Exception:
-                amt = None
-            self.transaction_data = {"amount": amt, "description": self.desc_input.text().strip()}
-            super().accept()
-
-# استيراد معالجة الاستثناءات من SQLAlchemy (إن كانت موجودة في المشروع)
-try:
-    from sqlalchemy.exc import IntegrityError
-except Exception:
-    class IntegrityError(Exception):
-        pass
-
-# حاول استيراد نماذج قاعدة البيانات الحقيقية، وإن لم تتوفر استعمل بيانات وهمية للاختبار
-try:
-    from database_setup import User, CashSession, Transaction, SessionLocal, FlexiTransaction
-    # If using SQLAlchemy, we may want to eager-load relationships
-    try:
-        from sqlalchemy.orm import joinedload
-    except Exception:
-        joinedload = None
-except Exception:
-    from dataclasses import dataclass, field
-    @dataclass
-    class Transaction:
-        id: int
-        session_id: int
-        type: str
-        amount: float
-        description: str
-        timestamp: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
-
-    @dataclass
-    class FlexiTransaction:
-        id: int
-        session_id: int
-        amount: float
-        description: str
-        timestamp: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc))
-        user_id: int = 1
-    
-    @dataclass
-    class User:
-        id: int = 1
-        username: str = "testuser"
-        role: str = "user"
-        password_hash: str = ""
-        def set_password(self, p): self.password_hash = p
-        
-    @dataclass
-    class CashSession:
-        id: int
-        user_id: int
-        start_time: datetime.datetime
-        start_balance: float = 0.0
-        start_flexi: float = 0.0
-        total_expense: float = 0.0
-        total_flexi_additions: float = 0.0
-        status: str = "closed"
-        end_time: datetime.datetime | None = None
-        end_balance: float | None = None
-        end_flexi: float | None = None
-        notes: str | None = ""
-        transactions: list = field(default_factory=list)
-        flexi_transactions: list = field(default_factory=list)
-
-        @property
-        def net_profit(self):
-            # If an actual end balance exists, net profit is end_balance - start_balance
-            if self.end_balance is not None:
-                return self.end_balance - self.start_balance
-            # otherwise derive from transactions / totals
-            return self.start_balance - self.total_expense
-        
-        # -- إضافة --: خصائص جديدة لحساب الفروقات بشكل منفصل
-        @property
-        def net_cash_difference(self):
-            if self.end_balance is None:
-                return 0.0
-            # -- تعديل --: تم إضافة خصم الفليكسي المستهلك
-            theoretical_cash_balance = (self.start_balance - self.total_expense)
-            return self.end_balance - theoretical_cash_balance
-            
-        @property
-        def flexi_consumed(self):
-            if self.end_flexi is None:
-                return 0.0
-            theoretical_flexi_balance = (self.start_flexi or 0.0) + (self.total_flexi_additions or 0.0)
-            return theoretical_flexi_balance - self.end_flexi
-
-
-        @property
-        def gross_income(self):
-            return self.start_balance - self.total_expense
-
-    class SessionLocal:
-        def __init__(self):
-            self._sessions = []
-            now = datetime.datetime.now(datetime.timezone.utc)
-            for i in range(4):
-                st = now - datetime.timedelta(hours=i*3)
-                s = CashSession(id=i+1, user_id=1, start_time=st, start_balance=1600.0,
-                                start_flexi=1000.0,
-                                total_expense=1100.0 if i==0 else (200.0*(i)), status='closed' if i!=1 else 'open')
-                if i==0:
-                    s.total_expense = 123456789.99
-                    s.transactions = [Transaction(id=1, session_id=s.id, type='expense', amount=123456789.99, description="فاتورة ضخمة جداً لعرض المشكلة", timestamp=st)]
-                    s.flexi_transactions = [FlexiTransaction(id=1, session_id=s.id, amount=500.0, description="إضافة يومية", timestamp=st)]
-                self._sessions.append(s)
-        def query(self, model):
-            class Q:
-                def __init__(self, sessions): self.sessions = sessions
-                def filter_by(self, **kwargs):
-                    user_id = kwargs.get('user_id', None)
-                    status = kwargs.get('status', None)
-                    res = self.sessions
-                    if user_id is not None:
-                        res = [x for x in res if x.user_id == user_id]
-                    if status is not None:
-                        res = [x for x in res if x.status == status]
-                    class R:
-                        def __init__(self, items): self.items = items
-                        def order_by(self, *args): return self
-                        def all(self): return self.items
-                        def first(self): return self.items[0] if self.items else None
-                        def one(self): return self.items[0] if self.items else None
-                        def get(self, id):
-                            for it in self.items:
-                                if it.id == id: return it
-                            return None
-                    return R(res)
-            return Q(self._sessions)
-        def add(self, obj): pass
-        def commit(self): pass
-        def refresh(self, obj): pass
-        def rollback(self): pass
-        def close(self): pass
-
-# --- Custom Dialog Base Class ---
-class CustomDialog(QDialog):
-    def __init__(self, title, parent=None):
-        super().__init__(parent)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setStyleSheet(parent.styleSheet() if parent else "")
-
-        self.old_pos = None
-
-        self.bg_frame = QFrame(self)
-        self.bg_frame.setObjectName("CustomDialogFrame")
-        self.bg_frame.setFrameShape(QFrame.Shape.NoFrame)
-
-        frame_layout = QVBoxLayout(self.bg_frame)
-        frame_layout.setContentsMargins(1, 1, 1, 1)
-        frame_layout.setSpacing(0)
-
-        self.title_bar = QWidget()
-        self.title_bar.setObjectName("CustomTitleBar")
-        self.title_bar.setFixedHeight(40)
-        title_bar_layout = QHBoxLayout(self.title_bar)
-        title_bar_layout.setContentsMargins(15, 0, 5, 0)
-        
-        self.title_label = QLabel(title)
-        self.title_label.setObjectName("CustomTitleLabel")
-        
-        self.close_button = QPushButton("✕")
-        self.close_button.setObjectName("CustomCloseButton")
-        self.close_button.setFixedSize(30, 30)
-        self.close_button.clicked.connect(self.reject)
-
-        title_bar_layout.addWidget(self.title_label)
-        title_bar_layout.addStretch()
-        title_bar_layout.addWidget(self.close_button)
-        
-        self.content_widget = QWidget()
-        self.content_layout = QVBoxLayout(self.content_widget)
-        self.content_layout.setContentsMargins(20, 15, 20, 20)
-        self.content_layout.setSpacing(10)
-
-        frame_layout.addWidget(self.title_bar)
-        frame_layout.addWidget(self.content_widget)
-
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(self.bg_frame)
-
-    def mousePressEvent(self, event: QMouseEvent):
-        if event.button() == Qt.MouseButton.LeftButton and self.title_bar.underMouse():
-            self.old_pos = event.globalPosition().toPoint()
-
-    def mouseMoveEvent(self, event: QMouseEvent):
-        if self.old_pos:
-            delta = QPoint(event.globalPosition().toPoint() - self.old_pos)
-            self.move(self.x() + delta.x(), self.y() + delta.y())
-            self.old_pos = event.globalPosition().toPoint()
-
-    def mouseReleaseEvent(self, event: QMouseEvent):
-        self.old_pos = None
-
-# --- Custom Message Box ---
-class CustomMessageBox(CustomDialog):
-    def __init__(self, parent, title, text, icon_pixmap):
-        super().__init__(title, parent)
-        self.setMinimumWidth(400)
-        
-        # Use the existing content_layout from the parent class
-        self.content_layout.setSpacing(20)
-
-        content_h_layout = QHBoxLayout()
-        content_h_layout.setSpacing(15)
-        
-        icon_label = QLabel()
-        icon_label.setPixmap(icon_pixmap.pixmap(48, 48))
-        
-        text_label = QLabel(text)
-        text_label.setWordWrap(True)
-        text_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-
-        content_h_layout.addWidget(icon_label)
-        content_h_layout.addWidget(text_label, 1)
-
-        self.buttons = QDialogButtonBox()
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        
-        self.content_layout.addLayout(content_h_layout)
-        self.content_layout.addWidget(self.buttons, 0, Qt.AlignmentFlag.AlignCenter)
-
-    @staticmethod
-    def show_message(parent, title, text, icon, buttons):
-        style = parent.style()
-        icon_pixmap = getattr(style, "standardIcon")(icon)
-        msg_box = CustomMessageBox(parent, title, text, icon_pixmap)
-        msg_box.buttons.setStandardButtons(buttons)
-        return msg_box.exec()
-
-    @staticmethod
-    def show_warning(parent, title, text):
-        return CustomMessageBox.show_message(parent, title, text, QStyle.StandardPixmap.SP_MessageBoxWarning, QDialogButtonBox.StandardButton.Ok)
-
-    @staticmethod
-    def show_information(parent, title, text):
-        return CustomMessageBox.show_message(parent, title, text, QStyle.StandardPixmap.SP_MessageBoxInformation, QDialogButtonBox.StandardButton.Ok)
-        
-    @staticmethod
-    def show_critical(parent, title, text):
-        return CustomMessageBox.show_message(parent, title, text, QStyle.StandardPixmap.SP_MessageBoxCritical, QDialogButtonBox.StandardButton.Ok)
-
-    @staticmethod
-    def show_question(parent, title, text):
-        reply = CustomMessageBox.show_message(parent, title, text, QStyle.StandardPixmap.SP_MessageBoxQuestion, QDialogButtonBox.StandardButton.Yes | QDialogButtonBox.StandardButton.No)
-        return reply == QDialog.DialogCode.Accepted
-
-
-# --- Summary card ---
-class SummaryCard(QFrame):
-    def __init__(self, title, icon: QStyle.StandardPixmap, accent: str = "primary"):
-        super().__init__()
-        self.setObjectName("SummaryCard")
-        self.setProperty("accentColor", accent)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.setMinimumWidth(200)
-        self.setMinimumHeight(140)
-
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(18, 18, 18, 18)
-        main_layout.setSpacing(14)
-
-        header_layout = QHBoxLayout()
-        header_layout.setSpacing(12)
-
-        self.icon_label = QLabel()
-        self.icon_label.setObjectName("SummaryCardIcon")
-        self.icon_label.setFixedSize(QSize(44, 44))
-        pixmap = self.style().standardIcon(icon).pixmap(QSize(26, 26))
-        self.icon_label.setPixmap(pixmap)
-        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.title_label = QLabel(title)
-        self.title_label.setObjectName("SummaryCardTitle")
-        self.title_label.setWordWrap(True)
-
-        header_layout.addWidget(self.icon_label)
-        header_layout.addWidget(self.title_label, 1)
-
-        self.value_label = QLabel("0.00")
-        self.value_label.setObjectName("SummaryCardValue")
-        self.value_label.setWordWrap(True)
-
-        self.caption_label = QLabel("")
-        self.caption_label.setObjectName("SummaryCardCaption")
-        self.caption_label.setWordWrap(True)
-        self.caption_label.setVisible(False)
-
-        main_layout.addLayout(header_layout)
-        main_layout.addWidget(self.value_label)
-        main_layout.addWidget(self.caption_label)
-        main_layout.addStretch(1)
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setOffset(0, 14)
-        shadow.setBlurRadius(28)
-        shadow.setColor(QColor(15, 23, 42, 40))
-        self.setGraphicsEffect(shadow)
-
-    def set_value(self, value_text):
-        self.value_label.setText(value_text)
-
-    def set_caption(self, caption_text: str):
-        self.caption_label.setText(caption_text)
-        self.caption_label.setVisible(bool(caption_text))
-
-# --- SessionHistoryItem (FIXED) ---
-
-
-class SessionHistoryItem(QWidget):
-    def __init__(self, session: CashSession):
-        super().__init__()
-        self.setObjectName("HistoryItem")
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setAutoFillBackground(False)
-        self.session = session
-
-        # Make the widget expand horizontally inside the list
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-
-        # Tooltip for notes
-        self.setToolTip(session.notes or "")
-
-        # Root layout
-        main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(8, 8, 8, 8)
-        main_layout.setSpacing(10)
-
-        # Card container (gives border + rounded corners)
-        self.card = QFrame()
-        self.card.setObjectName("HistoryCard")
-        self.card.setFrameShape(QFrame.Shape.NoFrame)
-        self.card_layout = QVBoxLayout(self.card)
-        self.card_layout.setContentsMargins(14, 12, 14, 12)
-        self.card_layout.setSpacing(10)
-
-        self.card_shadow = QGraphicsDropShadowEffect(self.card)
-        self.card_shadow.setOffset(0, 10)
-        self.card_shadow.setBlurRadius(20)
-        self.card_shadow.setColor(QColor(15, 23, 42, 60))
-        self.card.setGraphicsEffect(self.card_shadow)
-
-        header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(12)
-        header_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-
-        date_time_layout = QVBoxLayout()
-        date_time_layout.setSpacing(2)
-        date_time_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self.date_label = QLabel(session.start_time.strftime('%d/%m/%Y') if session.start_time else "غير متوفر")
-        self.date_label.setObjectName("HistoryItemDate")
-        self.date_label.setStyleSheet("font-weight:600;")
-        self.date_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.time_label = QLabel(session.start_time.strftime('%H:%M') if session.start_time else "")
-        self.time_label.setObjectName("HistoryItemTime")
-        self.time_label.setStyleSheet("color: rgba(0,0,0,0.55); font-size:12px;")
-        self.time_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        date_time_layout.addWidget(self.date_label)
-        date_time_layout.addWidget(self.time_label)
-        header_layout.addLayout(date_time_layout)
-
-        header_layout.addStretch(1)
-
-        right_layout = QVBoxLayout()
-        right_layout.setSpacing(6)
-        right_layout.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-        # Profit value
-        # -- تعديل --: عرض صافي الفرق النقدي فقط في قائمة السجل
-        try:
-            # -- تعديل --: استخدام الخاصية net_cash_difference
-            profit_value = float(getattr(session, 'net_cash_difference', 0.0))
-        except Exception:
-            profit_value = 0.0
-        self.profit_label = QLabel(f"{profit_value:+.2f}")
-        self.profit_label.setObjectName("HistoryItemProfit")
-        self.profit_label.setStyleSheet("font-weight:700; font-size:13px;")
-        if profit_value >= 0:
-            self.profit_label.setStyleSheet(self.profit_label.styleSheet() + "color: #198754;")
-        else:
-            self.profit_label.setStyleSheet(self.profit_label.styleSheet() + "color: #dc3545;")
-
-        # status badge (open/closed)
-        status_text = "مفتوحة" if session.status == 'open' else "مغلقة"
-        self.status_badge = QLabel(status_text)
-        self.status_badge.setObjectName("StatusBadge")
-        if session.status == 'open':
-            self.status_badge.setStyleSheet("padding:6px 10px; border-radius:12px; background-color: rgba(25,135,84,0.12); color:#198754; font-weight:600;")
-        else:
-            self.status_badge.setStyleSheet("padding:6px 10px; border-radius:12px; background-color: rgba(220,53,69,0.08); color:#dc3545; font-weight:600;")
-
-        right_layout.addWidget(self.profit_label, alignment=Qt.AlignmentFlag.AlignRight)
-        right_layout.addWidget(self.status_badge, alignment=Qt.AlignmentFlag.AlignRight)
-
-        self.total_profit_label = None
-        if session.status == 'closed':
-            try:
-                total_net_profit = (
-                    (session.end_balance - session.start_balance - session.total_expense)
-                    + (session.total_flexi_additions - session.flexi_consumed)
-                )
-                self.total_profit_label = QLabel(f"<b>الربح الصافي:</b> {total_net_profit:,.2f}")
-                self.total_profit_label.setStyleSheet("font-size: 10px; color: #495057;")
-                self.total_profit_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                right_layout.addWidget(self.total_profit_label, alignment=Qt.AlignmentFlag.AlignRight)
-            except Exception:
-                self.total_profit_label = None
-
-        header_layout.addLayout(right_layout)
-
-        self.card_layout.addLayout(header_layout)
-
-        note_text = (session.notes or "").strip() or "لا توجد ملاحظات لهذه الجلسة"
-        self.note_label = QLabel(note_text)
-        self.note_label.setObjectName("HistoryItemNote")
-        self.note_label.setStyleSheet("color: #343a40; font-size:14px; font-weight: 500;")
-        self.note_label.setWordWrap(True)
-        self.note_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
-        self.note_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
-        self.note_label.setMinimumHeight(32)
-        self.note_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.card_layout.addWidget(self.note_label)
-        self.card_layout.addStretch(1)
-
-        main_layout.addWidget(self.card)
-
-        # enable hover tracking for nicer effect
-        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
-
-        # default unselected style
-        self.set_selected_state(False)
-
-    def sizeHint(self):
-        card_hint = self.card.sizeHint()
-        note_hint = self.note_label.sizeHint()
-        height = max(card_hint.height(), note_hint.height() + 32)
-        return QSize(card_hint.width() + 16, height + 16)
-
-    def update_card_width(self, available_width: int) -> None:
-        """Force the history card to use the provided width so text never truncates."""
-        if available_width <= 0:
-            return
-
-        # Account for the outer margins that wrap the card inside the QListWidget.
-        effective_width = max(available_width - 16, 220)
-        self.setFixedWidth(available_width)
-        self.card.setFixedWidth(effective_width)
-        self.note_label.setFixedWidth(max(effective_width - 8, 200))
-        self.note_label.adjustSize()
-        self.card.updateGeometry()
-        self.updateGeometry()
-
-    def _update_shadow(self, blur_radius: float, alpha: int):
-        self.card_shadow.setBlurRadius(blur_radius)
-        self.card_shadow.setColor(QColor(15, 23, 42, max(0, min(alpha, 255))))
-
-    def set_selected_state(self, selected: bool):
-        """Apply selected/unselected visual style to the card frame."""
-        if selected:
-            self.card.setStyleSheet("""
-                QFrame#HistoryCard {
-                    border: 2px solid rgba(37, 99, 235, 0.35);
-                    border-radius: 18px;
-                    background-color: rgba(37, 99, 235, 0.12);
-                }
-            """)
-            self._update_shadow(26, 110)
-        else:
-            self.card.setStyleSheet("""
-                QFrame#HistoryCard {
-                    border: 1px solid rgba(148, 163, 184, 0.22);
-                    border-radius: 18px;
-                    background-color: rgba(255,255,255,0.96);
-                }
-            """)
-            self._update_shadow(18, 80)
-
-    def enterEvent(self, event):
-        # subtle hover highlight
-        hover_style = """
-            QFrame#HistoryCard {
-                border: 1px solid rgba(37, 99, 235, 0.3);
-                border-radius: 18px;
-                background-color: rgba(37, 99, 235, 0.1);
-            }
-        """
-        self.card.setStyleSheet(hover_style)
-        self._update_shadow(22, 100)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        # restore based on selection state
-        # find if parent list has this as current
-        parent = self.parent()
-        is_selected = False
-        while parent is not None and not isinstance(parent, QListWidget):
-            parent = parent.parent()
-        if isinstance(parent, QListWidget):
-            for i in range(parent.count()):
-                it = parent.item(i)
-                if parent.itemWidget(it) is self and parent.currentItem() is it:
-                    is_selected = True
-                    break
-        self.set_selected_state(is_selected)
-        super().leaveEvent(event)
-
-    def mousePressEvent(self, event):
-        super().mousePressEvent(event)
-        # when clicked, select the matching QListWidgetItem
-        parent = self.parent()
-        while parent is not None and not isinstance(parent, QListWidget):
-            parent = parent.parent()
-        if isinstance(parent, QListWidget):
-            for i in range(parent.count()):
-                it = parent.item(i)
-                if parent.itemWidget(it) is self:
-                    parent.setCurrentItem(it)
-                    break
-
-class AddFlexiDialog(CustomDialog):
-    def __init__(self, parent=None):
-        super().__init__("إضافة فليكسي", parent)
-        self.setMinimumWidth(480)
-        self.flexi_data = None
-        
-        layout = self.content_layout
-        
-        label = QLabel("الرجاء إدخال المبلغ المضاف للفليكسي:")
-        self.amount_input = QLineEdit()
-        self.amount_input.setValidator(QDoubleValidator(0.0, 99999999.99, 2))
-        self.amount_input.setPlaceholderText("0.00")
-        
-        desc_label = QLabel("ملاحظة (اختياري):")
-        self.desc_input = QLineEdit()
-        self.desc_input.setPlaceholderText("مثلاً: شحن فليكسي من حساب خاص")
-        
-        # -- تعديل --: تغيير الحالة الافتراضية إلى غير محددة
-        self.is_paid_checkbox = QCheckBox("تم الدفع نقدًا من الصندوق")
-        self.is_paid_checkbox.setChecked(False)
-        
-        layout.addWidget(label)
-        layout.addWidget(self.amount_input)
-        layout.addWidget(desc_label)
-        layout.addWidget(self.desc_input)
-        layout.addWidget(self.is_paid_checkbox)
-        
-        self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        self.button_box.accepted.connect(self.accept)
-        self.button_box.rejected.connect(self.reject)
-        layout.addWidget(self.button_box)
-        
-    def accept(self):
-        amount = self.amount_input.text()
-        if not amount:
-            CustomMessageBox.show_warning(self, "خطأ", "الرجاء إدخال مبلغ صحيح.")
-            return
-        
-        try:
-            self.flexi_data = {
-                "amount": float(amount),
-                "description": self.desc_input.text().strip(),
-                "is_paid": self.is_paid_checkbox.isChecked() # -- تعديل --: إضافة حالة الدفع
-            }
-            super().accept()
-        except ValueError:
-            CustomMessageBox.show_warning(self, "خطأ", "الرجاء إدخال قيمة رقمية صحيحة.")
-
-class OpenCashDialog(CustomDialog):
-    def __init__(self, parent=None):
-        super().__init__("فتح صندوق جديد", parent)
-        self.setMinimumWidth(400)
-
-        layout = self.content_layout
-        
-        label_cash = QLabel("الرجاء إدخال رصيد بداية الصندوق:")
-        self.balance_input = QLineEdit()
-        self.balance_input.setValidator(QDoubleValidator(0.0, 99999999.99, 2))
-        self.balance_input.setPlaceholderText("0.00")
-        
-        label_flexi = QLabel("الرجاء إدخال رصيد الفليكسي الحالي:")
-        self.flexi_input = QLineEdit()
-        self.flexi_input.setValidator(QDoubleValidator(0.0, 99999999.99, 2))
-        self.flexi_input.setPlaceholderText("0.00")
-        
-        layout.addWidget(label_cash)
-        layout.addWidget(self.balance_input)
-        layout.addWidget(label_flexi)
-        layout.addWidget(self.flexi_input)
-        
-        self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        self.button_box.accepted.connect(self.accept)
-        self.button_box.rejected.connect(self.reject)
-        layout.addWidget(self.button_box)
-        
-    def get_data(self):
-        try:
-            balance = float(self.balance_input.text()) if self.balance_input.text() else 0.0
-            flexi_balance = float(self.flexi_input.text()) if self.flexi_input.text() else 0.0
-            return {"start_balance": balance, "start_flexi": flexi_balance}
-        except ValueError:
-            return None
-
-class CloseCashDialog(CustomDialog):
-    def __init__(self, session_summary, parent=None):
-        super().__init__("إغلاق الصندوق", parent)
-        self.setMinimumWidth(440)
-
-        layout = self.content_layout
-        summary_label = QLabel("<b>ملخص الجلسة الحالية:</b>")
-        layout.addWidget(summary_label)
-        
-        summary_frame = QFrame()
-        summary_frame.setObjectName("SummaryFrame")
-        summary_layout = QVBoxLayout(summary_frame)
-        summary_layout.addWidget(QLabel(f"رصيد النقد البداية: {session_summary['start_balance']:.2f}"))
-        summary_layout.addWidget(QLabel(f"مجموع المصاريف: {session_summary['total_expense']:.2f}"))
-        summary_layout.addWidget(QLabel(f"رصيد الفليكسي البداية: {session_summary['start_flexi']:.2f}"))
-        summary_layout.addWidget(QLabel(f"مجموع إضافات الفليكسي: {session_summary['total_flexi_additions']:.2f}"))
-        
-        layout.addWidget(summary_frame)
-        
-        # Grid layout for better alignment
-        form_layout = QFormLayout()
-        
-        end_balance_label = QLabel("<b>الرجاء إدخال رصيد النقد الفعلي:</b>")
-        self.end_balance_input = QLineEdit()
-        self.end_balance_input.setValidator(QDoubleValidator(0.0, 99999999.99, 2))
-        self.end_balance_input.setPlaceholderText("المبلغ الذي تم عَدّه في الصندوق")
-        form_layout.addRow(end_balance_label, self.end_balance_input)
-        
-        end_flexi_label = QLabel("<b>الرجاء إدخال رصيد الفليكسي الفعلي:</b>")
-        self.end_flexi_input = QLineEdit()
-        self.end_flexi_input.setValidator(QDoubleValidator(0.0, 99999999.99, 2))
-        self.end_flexi_input.setPlaceholderText("المبلغ في حساب الفليكسي")
-        form_layout.addRow(end_flexi_label, self.end_flexi_input)
-        
-        layout.addLayout(form_layout)
-        
-        self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        self.button_box.accepted.connect(self.accept)
-        self.button_box.rejected.connect(self.reject)
-        layout.addWidget(self.button_box)
-        
-    def get_data(self):
-        try:
-            end_balance = float(self.end_balance_input.text()) if self.end_balance_input.text() else None
-            end_flexi = float(self.end_flexi_input.text()) if self.end_flexi_input.text() else None
-            return {"end_balance": end_balance, "end_flexi": end_flexi}
-        except ValueError:
-            return None
-
-
-class ClosingReportDialog(CustomDialog):
-    def __init__(self, session, parent=None):
-        super().__init__("تقرير إغلاق الجلسة", parent)
-        self.setMinimumWidth(480)
-        
-        layout = self.content_layout
-        layout.setSpacing(12)
-        
-        title_label = QLabel("تم إغلاق الجلسة بنجاح")
-        title_label.setObjectName("ReportTitle")
-        
-        # Grid layout for better alignment
-        form_layout = QFormLayout()
-        form_layout.setSpacing(10)
-        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        
-        # Cash section
-        cash_title = QLabel("<b>ملخص النقد:</b>")
-        cash_title.setStyleSheet("font-size: 12pt; margin-top: 10px;")
-        form_layout.addRow(cash_title)
-        
-        start_balance = f"{session.start_balance:,.2f}"
-        total_expense = f"{session.total_expense:,.2f}"
-        end_balance = f"{session.end_balance:,.2f}" if session.end_balance is not None else "N/A"
-        
-        # -- تعديل --: حساب الرصيد النظري النقدي بشكل صحيح
-        theoretical_cash_balance = session.start_balance - session.total_expense + session.total_flexi_paid
-        theoretical_balance_str = f"{theoretical_cash_balance:,.2f}"
-        
-        difference = session.net_cash_difference
-        difference_str = f"{difference:+,.2f}"
-        
-        form_layout.addRow(QLabel("<b>رصيد البداية:</b>"), QLabel(start_balance))
-        form_layout.addRow(QLabel("<b>مجموع المصاريف:</b>"), QLabel(total_expense))
-        form_layout.addRow(QLabel("<b>الرصيد النظري:</b>"), QLabel(theoretical_balance_str))
-        
-        separator_cash = QFrame()
-        separator_cash.setFrameShape(QFrame.Shape.HLine)
-        separator_cash.setObjectName("Separator")
-        form_layout.addRow(separator_cash)
-        
-        form_layout.addRow(QLabel("<b>الرصيد الفعلي (النهاية):</b>"), QLabel(end_balance))
-        
-        diff_label_cash = QLabel(difference_str)
-        if difference < 0: diff_label_cash.setObjectName("NegativeValue")
-        elif difference > 0: diff_label_cash.setObjectName("PositiveValue")
-        form_layout.addRow(QLabel("<b>الفرق (عجز/زيادة):</b>"), diff_label_cash)
-
-        # Flexi section
-        flexi_title = QLabel("<b>ملخص الفليكسي:</b>")
-        flexi_title.setStyleSheet("font-size: 12pt; margin-top: 15px;")
-        form_layout.addRow(flexi_title)
-        
-        start_flexi = f"{session.start_flexi:,.2f}" if session.start_flexi is not None else "N/A"
-        total_flexi_additions = f"{session.total_flexi_additions:,.2f}"
-        end_flexi = f"{session.end_flexi:,.2f}" if session.end_flexi is not None else "N/A"
-        
-        flexi_theoretical_balance = (session.start_flexi or 0.0) + (session.total_flexi_additions or 0.0)
-        flexi_theoretical_balance_str = f"{flexi_theoretical_balance:,.2f}"
-        
-        # -- تعديل --: حساب الفليكسي المستهلك
-        flexi_consumed = session.flexi_consumed if session.end_flexi is not None else 0
-        flexi_consumed_str = f"{flexi_consumed:,.2f}"
-        
-        form_layout.addRow(QLabel("<b>رصيد البداية:</b>"), QLabel(start_flexi))
-        form_layout.addRow(QLabel("<b>مجموع الإضافات:</b>"), QLabel(total_flexi_additions))
-        form_layout.addRow(QLabel("<b>الرصيد النظري:</b>"), QLabel(flexi_theoretical_balance_str))
-        
-        separator_flexi = QFrame()
-        separator_flexi.setFrameShape(QFrame.Shape.HLine)
-        separator_flexi.setObjectName("Separator")
-        form_layout.addRow(separator_flexi)
-        
-        form_layout.addRow(QLabel("<b>الرصيد الفعلي (النهاية):</b>"), QLabel(end_flexi))
-
-        diff_label_flexi = QLabel(flexi_consumed_str)
-        diff_label_flexi.setObjectName("PositiveValue") # المستهلك يعتبر قيمة إيجابية
-        form_layout.addRow(QLabel("<b>الفليكسي المستهلك:</b>"), diff_label_flexi)
-        
-        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
-        button_box.accepted.connect(self.accept)
-
-        layout.addWidget(title_label)
-        layout.addLayout(form_layout)
-        layout.addWidget(button_box)
-
-
-# --- Main window ---
-class UserDashboard(QMainWindow):
-    def __init__(self, user: User):
-        super().__init__()
+    CHARTS_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    CHARTS_AVAILABLE = False
+    QCategoryAxis = QChart = QChartView = QLineSeries = QPieSeries = QValueAxis = None  # type: ignore
+
+from database_setup import CashSession, FlexiTransaction, SessionLocal, Transaction
+from ui_helpers import (
+    ChartPlaceholder,
+    ModernDashboardWindow,
+    RecordTable,
+    SessionDetailCard,
+    SessionTable,
+    StatisticGrid,
+    SummaryCard,
+    format_currency,
+    format_datetime,
+    format_duration,
+)
+
+
+class DashboardRepository:
+    """Collects and formats dashboard data for the authenticated user."""
+
+    def __init__(self, user) -> None:
         self.user = user
-        self.db_session = SessionLocal()
-        self.current_session = None
-        self.all_sessions = []
-        self.selected_session_id = None
-        self._summary_column_count = None
-        self._current_button_min_width = None
-        self._current_detail_metrics = None
-        self._current_summary_padding = None
-        self._current_action_spacing = None
-        self._last_splitter_sizes = None
-        self._current_splitter_orientation = None
-        self.dark_mode = False
-        self.overview_cards = {}
-        self.revenue_chart_view = None
-        self.breakdown_chart_view = None
-        self.global_expenses_table = None
-        self.global_flexi_table = None
-        self.setWindowTitle(f"نظام إدارة الصندوق - {self.user.username}")
-        self.setGeometry(80, 80, 1300, 760)
-        self.setMinimumSize(1024, 640)
-        self.setup_ui()
-        self.apply_styles()
-        self.load_user_sessions_history()
-        self.check_for_open_session()
 
-    def setup_ui(self):
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-
-        root_layout = QVBoxLayout(main_widget)
-        root_layout.setContentsMargins(24, 24, 24, 24)
-        root_layout.setSpacing(20)
-
-        overview_bar = self.create_overview_bar()
-        root_layout.addWidget(overview_bar)
-
-        self.section_tabs = QTabWidget()
-        self.section_tabs.setObjectName("NavigationTabs")
-        self.section_tabs.setTabPosition(QTabWidget.TabPosition.West)
-        self.section_tabs.setMovable(False)
-        self.section_tabs.setDocumentMode(True)
-        self.section_tabs.setIconSize(QSize(28, 28))
-        root_layout.addWidget(self.section_tabs, 1)
-
-        sessions_page = QWidget()
-        sessions_layout = QVBoxLayout(sessions_page)
-        sessions_layout.setContentsMargins(0, 0, 0, 0)
-        sessions_layout.setSpacing(18)
-
-        header_widget = QWidget()
-        header_widget.setObjectName("SessionsHeader")
-        header_layout = QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(12)
-
-        self.welcome_label = QLabel(f"<b>أهلاً بك، {self.user.username}</b>")
-        self.welcome_label.setObjectName("WelcomeLabel")
-        self.welcome_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.welcome_label.setWordWrap(True)
-
-        self.session_status_filter = QComboBox()
-        self.session_status_filter.setObjectName("StatusFilter")
-        self.session_status_filter.addItem("كل الحالات", None)
-        self.session_status_filter.addItem("الجلسات المفتوحة", "open")
-        self.session_status_filter.addItem("الجلسات المغلقة", "closed")
-        self.session_status_filter.currentIndexChanged.connect(
-            lambda _: self.filter_sessions_history(self.history_search_input.text())
-        )
-
-        self.history_search_input = QLineEdit()
-        self.history_search_input.setObjectName("HistorySearch")
-        self.history_search_input.setPlaceholderText("ابحث باسم العامل أو تاريخ الجلسة أو الحالة...")
-        self.history_search_input.setClearButtonEnabled(True)
-        self.history_search_input.textChanged.connect(self.filter_sessions_history)
-
-        header_layout.addWidget(self.welcome_label)
-        header_layout.addStretch()
-        header_layout.addWidget(self.session_status_filter)
-        header_layout.addWidget(self.history_search_input)
-
-        sessions_layout.addWidget(header_widget)
-
-        actions_container = QWidget()
-        actions_container.setObjectName("ActionsContainer")
-        actions_flow = FlowLayout(spacing=12, alignment=Qt.AlignmentFlag.AlignRight)
-        actions_flow.setContentsMargins(0, 0, 0, 0)
-        actions_container.setLayout(actions_flow)
-        self.actions_flow = actions_flow
-
-        self.open_cash_btn = QPushButton(" فتح الصندوق")
-        self.add_expense_btn = QPushButton(" إضافة مصروف")
-        self.add_flexi_btn = QPushButton(" إضافة فليكسي")
-        self.close_cash_btn = QPushButton(" غلق الصندوق")
-        self.open_cash_btn.setObjectName("SuccessButton")
-        self.close_cash_btn.setObjectName("DangerButton")
-        self.add_expense_btn.setObjectName("PrimaryButton")
-        self.add_flexi_btn.setObjectName("SecondaryButton")
-
-        self.open_cash_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogYesButton))
-        self.add_expense_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
-        self.add_flexi_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowUp))
-        self.close_cash_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogNoButton))
-
-        self.action_buttons = [
-            self.open_cash_btn,
-            self.add_expense_btn,
-            self.add_flexi_btn,
-            self.close_cash_btn,
-        ]
-        for btn in self.action_buttons:
-            btn.setIconSize(QSize(16, 16))
-            btn.setMinimumHeight(44)
-            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            actions_flow.addWidget(btn)
-
-        sessions_layout.addWidget(actions_container)
-
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setChildrenCollapsible(False)
-        self.main_splitter = splitter
-
-        history_widget = QWidget()
-        history_widget.setObjectName("HistoryWidget")
-        history_widget.setMinimumWidth(220)
-        history_widget.setMaximumWidth(420)
-        history_widget.setMinimumHeight(240)
-        history_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        self.history_widget = history_widget
-        history_layout = QVBoxLayout(history_widget)
-        history_layout.setContentsMargins(0, 0, 0, 0)
-        history_layout.setSpacing(0)
-        self.history_layout = history_layout
-
-        history_label = QLabel("سجل الجلسات")
-        history_label.setObjectName("HistoryTitle")
-
-        self.sessions_history_list = QListWidget()
-        self.sessions_history_list.setObjectName("SessionsList")
-        self.sessions_history_list.setSpacing(12)
-        self.sessions_history_list.setUniformItemSizes(False)
-        self.sessions_history_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.sessions_history_list.currentItemChanged.connect(self.select_session_from_history)
-
-        history_layout.addWidget(history_label)
-        history_layout.addWidget(self.sessions_history_list)
-        splitter.addWidget(history_widget)
-
-        details_scroll = QScrollArea()
-        details_scroll.setObjectName("DetailsScrollArea")
-        details_scroll.setWidgetResizable(True)
-        details_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        details_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        details_container = QWidget()
-        details_container.setObjectName("DetailsContent")
-        details_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        details_layout = QVBoxLayout(details_container)
-        details_layout.setContentsMargins(30, 20, 30, 20)
-        details_layout.setSpacing(20)
-        self.details_layout = details_layout
-
-        self.session_context_label = QLabel("اختر جلسة من السجل لعرض تفاصيلها")
-        self.session_context_label.setObjectName("SessionContextLabel")
-        self.session_context_label.setWordWrap(True)
-        self.session_context_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
-        self.session_context_label.setTextFormat(Qt.TextFormat.RichText)
-        details_layout.addWidget(self.session_context_label)
-
-        summary_container = QFrame()
-        summary_container.setObjectName("SummaryContainer")
-        summary_container.installEventFilter(self)
-        summary_grid = QGridLayout(summary_container)
-        summary_grid.setContentsMargins(20, 20, 20, 20)
-        summary_grid.setHorizontalSpacing(22)
-        summary_grid.setVerticalSpacing(22)
-        summary_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-
-        self.start_balance_card = SummaryCard("رصيد البداية", QStyle.StandardPixmap.SP_FileDialogStart, accent="emerald")
-        self.total_expense_card = SummaryCard("مجموع المصاريف", QStyle.StandardPixmap.SP_ArrowDown, accent="orange")
-        self.current_flexi_card = SummaryCard("رصيد الفليكسي", QStyle.StandardPixmap.SP_DirOpenIcon, accent="indigo")
-        self.net_profit_card = SummaryCard("الفرق في النقد", QStyle.StandardPixmap.SP_ArrowUp, accent="cyan")
-        self.flexi_consumed_card = SummaryCard("الفليكسي المستهلك", QStyle.StandardPixmap.SP_ArrowDown, accent="rose")
-        self.total_net_profit_card = SummaryCard("الربح الصافي الكلي", QStyle.StandardPixmap.SP_DialogApplyButton, accent="violet")
-
-        summary_cards = [
-            self.start_balance_card,
-            self.total_expense_card,
-            self.current_flexi_card,
-            self.net_profit_card,
-            self.flexi_consumed_card,
-            self.total_net_profit_card,
-        ]
-
-        self.summary_container = summary_container
-        self.summary_grid = summary_grid
-        self.summary_cards = summary_cards
-        self.update_summary_grid_layout(force=True)
-
-        details_layout.addWidget(summary_container)
-
-        analytics_container = QWidget()
-        analytics_container.setObjectName("Container")
-        analytics_shadow = QGraphicsDropShadowEffect(analytics_container)
-        analytics_shadow.setOffset(0, 12)
-        analytics_shadow.setBlurRadius(24)
-        analytics_shadow.setColor(QColor(15, 23, 42, 45))
-        analytics_container.setGraphicsEffect(analytics_shadow)
-        analytics_layout = QHBoxLayout(analytics_container)
-        analytics_layout.setContentsMargins(24, 24, 24, 24)
-        analytics_layout.setSpacing(18)
-
-        if QTCHARTS_AVAILABLE:
-            self.revenue_chart_view = QChartView()
-            self.revenue_chart_view.setObjectName("AnalyticsChart")
-            self.revenue_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            self.revenue_chart_view.setMinimumHeight(260)
-            analytics_layout.addWidget(self.revenue_chart_view, 2)
-
-            self.breakdown_chart_view = QChartView()
-            self.breakdown_chart_view.setObjectName("AnalyticsChart")
-            self.breakdown_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            self.breakdown_chart_view.setMinimumHeight(260)
-            analytics_layout.addWidget(self.breakdown_chart_view, 1)
-        else:
-            placeholder = self._create_chart_placeholder(
-                "الرسوم البيانية غير مفعّلة",
-                "الرجاء تثبيت الحزمة PyQt6-Charts لعرض تحليلات الأرباح والمصاريف.",
-            )
-            analytics_layout.addWidget(placeholder, 1)
-
-            secondary_placeholder = self._create_chart_placeholder(
-                "—",
-                "سيتم عرض توزيع الأرباح والمصاريف هنا بعد تثبيت الدعم الرسومي.",
-            )
-            analytics_layout.addWidget(secondary_placeholder, 1)
-
-        details_layout.addWidget(analytics_container)
-
-        bottom_splitter = QSplitter(Qt.Orientation.Vertical)
-        bottom_splitter.setChildrenCollapsible(False)
-
-        tables_container = QWidget()
-        tables_container.setObjectName("Container")
-        tables_shadow = QGraphicsDropShadowEffect(tables_container)
-        tables_shadow.setOffset(0, 12)
-        tables_shadow.setBlurRadius(24)
-        tables_shadow.setColor(QColor(15, 23, 42, 45))
-        tables_container.setGraphicsEffect(tables_shadow)
-        tables_layout = QVBoxLayout(tables_container)
-        
-        # Expenses table
-        table_label = QLabel("سجل المصاريف")
-        table_label.setObjectName("SectionTitle")
-        self.transactions_table = QTableWidget()
-        self.transactions_table.setColumnCount(4)
-        self.transactions_table.setHorizontalHeaderLabels(["#", "المبلغ", "الملاحظة", "الوقت"])
-        self.transactions_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.transactions_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.transactions_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.transactions_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.transactions_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.transactions_table.verticalHeader().setVisible(False)
-        self.transactions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.transactions_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.transactions_table.customContextMenuRequested.connect(self.open_transaction_menu)
-
-        # Flexi transactions table
-        flexi_table_label = QLabel("سجل إضافات الفليكسي")
-        flexi_table_label.setObjectName("SectionTitle")
-        self.flexi_transactions_table = QTableWidget()
-        self.flexi_transactions_table.setColumnCount(4)
-        self.flexi_transactions_table.setHorizontalHeaderLabels(["#", "المبلغ", "الملاحظة", "الوقت"])
-        self.flexi_transactions_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.flexi_transactions_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.flexi_transactions_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.flexi_transactions_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.flexi_transactions_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.flexi_transactions_table.verticalHeader().setVisible(False)
-        self.flexi_transactions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-
-        tables_layout.addWidget(table_label)
-        tables_layout.addWidget(self.transactions_table)
-        tables_layout.addWidget(flexi_table_label)
-        tables_layout.addWidget(self.flexi_transactions_table)
-
-        notes_container = QWidget()
-        notes_container.setObjectName("Container")
-        notes_shadow = QGraphicsDropShadowEffect(notes_container)
-        notes_shadow.setOffset(0, 12)
-        notes_shadow.setBlurRadius(24)
-        notes_shadow.setColor(QColor(15, 23, 42, 45))
-        notes_container.setGraphicsEffect(notes_shadow)
-        notes_layout = QVBoxLayout(notes_container)
-        notes_label = QLabel("ملاحظات الجلسة")
-        notes_label.setObjectName("SectionTitle")
-
-        self.notes_editor = QTextEdit()
-        self.notes_editor.setPlaceholderText("أضف ملاحظاتك هنا...")
-        self.save_notes_btn = QPushButton("حفظ الملاحظات")
-        self.save_notes_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
-        self.save_notes_btn.setObjectName("PrimaryButton")
-        self.save_notes_btn.setFixedHeight(40)
-
-        button_bar_layout = QHBoxLayout()
-        button_bar_layout.addStretch()
-        button_bar_layout.addWidget(self.save_notes_btn)
-
-        notes_layout.addWidget(notes_label)
-        notes_layout.addWidget(self.notes_editor)
-        notes_layout.addLayout(button_bar_layout)
-        
-        bottom_splitter.addWidget(tables_container)
-        bottom_splitter.addWidget(notes_container)
-        bottom_splitter.setSizes([420, 220])
-
-        details_layout.addWidget(bottom_splitter)
-        details_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        details_scroll.setWidget(details_container)
-        splitter.addWidget(details_scroll)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 3)
-        splitter.setSizes([360, 940])
-        self.details_container = details_container
-        self.details_scroll = details_scroll
-        self.bottom_splitter = bottom_splitter
-
-        sessions_layout.addWidget(splitter, 1)
-
-        self.section_tabs.addTab(sessions_page, "🗂 الجلسات")
-        self.section_tabs.addTab(self.build_expenses_tab(), "💸 المصاريف")
-        self.section_tabs.addTab(self.build_flexi_tab(), "➕ إضافات الفليكسي")
-        self.section_tabs.currentChanged.connect(self.handle_tab_change)
-
-        # Events
-        self.open_cash_btn.clicked.connect(self.open_cash_session)
-        self.add_expense_btn.clicked.connect(self.add_expense)
-        self.add_flexi_btn.clicked.connect(self.add_flexi)
-        self.close_cash_btn.clicked.connect(self.close_cash_session)
-        self.save_notes_btn.clicked.connect(self.save_session_notes)
-
-        self.update_responsive_layouts()
-        self.rebalance_splitter()
-
-    def create_overview_bar(self):
-        bar = QFrame()
-        bar.setObjectName("OverviewBar")
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(24, 18, 24, 18)
-        layout.setSpacing(20)
-
-        cards_wrapper = QWidget()
-        cards_layout = QHBoxLayout(cards_wrapper)
-        cards_layout.setContentsMargins(0, 0, 0, 0)
-        cards_layout.setSpacing(16)
-
-        profit_card, profit_value, profit_caption = self._create_overview_card("✅", "إجمالي الأرباح", "emerald")
-        expense_card, expense_value, expense_caption = self._create_overview_card("❌", "إجمالي المصاريف", "rose")
-        balance_card, balance_value, balance_caption = self._create_overview_card("⚖️", "صافي الرصيد", "indigo")
-
-        cards_layout.addWidget(profit_card)
-        cards_layout.addWidget(expense_card)
-        cards_layout.addWidget(balance_card)
-
-        layout.addWidget(cards_wrapper, 1)
-
-        self.overview_cards = {
-            "profit": {"value": profit_value, "caption": profit_caption},
-            "expenses": {"value": expense_value, "caption": expense_caption},
-            "balance": {"value": balance_value, "caption": balance_caption},
-        }
-
-        self.theme_toggle = QToolButton()
-        self.theme_toggle.setObjectName("ThemeToggle")
-        self.theme_toggle.setText("🌙 الوضع الليلي")
-        self.theme_toggle.setCheckable(True)
-        self.theme_toggle.setAutoRaise(True)
-        self.theme_toggle.toggled.connect(self.toggle_theme)
-        layout.addWidget(self.theme_toggle, 0, Qt.AlignmentFlag.AlignVCenter)
-
-        return bar
-
-    def _create_overview_card(self, icon_text: str, title: str, accent: str):
-        card = QFrame()
-        card.setObjectName("SummaryCard")
-        card.setProperty("accentColor", accent)
-        card_layout = QHBoxLayout(card)
-        card_layout.setContentsMargins(18, 16, 18, 16)
-        card_layout.setSpacing(16)
-
-        icon_label = QLabel(icon_text)
-        icon_label.setObjectName("SummaryCardIcon")
-        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_label.setFixedSize(44, 44)
-
-        text_layout = QVBoxLayout()
-        text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.setSpacing(4)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("SummaryCardTitle")
-        value_label = QLabel("0.00 دج")
-        value_label.setObjectName("SummaryCardValue")
-        caption_label = QLabel("—")
-        caption_label.setObjectName("SummaryCardCaption")
-
-        text_layout.addWidget(title_label)
-        text_layout.addWidget(value_label)
-        text_layout.addWidget(caption_label)
-
-        card_layout.addWidget(icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
-        card_layout.addLayout(text_layout)
-
-        return card, value_label, caption_label
-
-    def build_expenses_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(18)
-
-        header = QWidget()
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(12)
-
-        title = QLabel("المصاريف عبر الجلسات")
-        title.setObjectName("SectionTitle")
-        header_layout.addWidget(title)
-        header_layout.addStretch()
-
-        self.expenses_search_input = QLineEdit()
-        self.expenses_search_input.setPlaceholderText("ابحث حسب الملاحظة أو التاريخ أو المبلغ...")
-        self.expenses_search_input.setClearButtonEnabled(True)
-        self.expenses_search_input.textChanged.connect(self.filter_expenses_table)
-        header_layout.addWidget(self.expenses_search_input)
-
-        layout.addWidget(header)
-
-        table_container = QWidget()
-        table_container.setObjectName("Container")
-        table_shadow = QGraphicsDropShadowEffect(table_container)
-        table_shadow.setOffset(0, 12)
-        table_shadow.setBlurRadius(24)
-        table_shadow.setColor(QColor(15, 23, 42, 45))
-        table_container.setGraphicsEffect(table_shadow)
-        table_layout = QVBoxLayout(table_container)
-        table_layout.setContentsMargins(0, 0, 0, 0)
-        table_layout.setSpacing(12)
-
-        self.global_expenses_table = QTableWidget()
-        self.global_expenses_table.setColumnCount(5)
-        self.global_expenses_table.setHorizontalHeaderLabels([
-            "#",
-            "الجلسة",
-            "التاريخ",
-            "المبلغ",
-            "الوصف",
-        ])
-        self.global_expenses_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.global_expenses_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.global_expenses_table.setAlternatingRowColors(True)
-        self.global_expenses_table.setSortingEnabled(True)
-        self.global_expenses_table.verticalHeader().setVisible(False)
-        self.global_expenses_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.global_expenses_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.global_expenses_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.global_expenses_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.global_expenses_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-
-        table_layout.addWidget(self.global_expenses_table)
-        layout.addWidget(table_container, 1)
-
-        return page
-
-    def build_flexi_tab(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(18)
-
-        header = QWidget()
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(12)
-
-        title = QLabel("إضافات الفليكسي")
-        title.setObjectName("SectionTitle")
-        header_layout.addWidget(title)
-        header_layout.addStretch()
-
-        self.flexi_search_input = QLineEdit()
-        self.flexi_search_input.setPlaceholderText("ابحث حسب الملاحظة أو التاريخ أو المبلغ...")
-        self.flexi_search_input.setClearButtonEnabled(True)
-        self.flexi_search_input.textChanged.connect(self.filter_flexi_table)
-        header_layout.addWidget(self.flexi_search_input)
-
-        layout.addWidget(header)
-
-        table_container = QWidget()
-        table_container.setObjectName("Container")
-        table_shadow = QGraphicsDropShadowEffect(table_container)
-        table_shadow.setOffset(0, 12)
-        table_shadow.setBlurRadius(24)
-        table_shadow.setColor(QColor(15, 23, 42, 45))
-        table_container.setGraphicsEffect(table_shadow)
-        table_layout = QVBoxLayout(table_container)
-        table_layout.setContentsMargins(0, 0, 0, 0)
-        table_layout.setSpacing(12)
-
-        self.global_flexi_table = QTableWidget()
-        self.global_flexi_table.setColumnCount(6)
-        self.global_flexi_table.setHorizontalHeaderLabels([
-            "#",
-            "الجلسة",
-            "التاريخ",
-            "المبلغ",
-            "الحالة",
-            "الوصف",
-        ])
-        self.global_flexi_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.global_flexi_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.global_flexi_table.setAlternatingRowColors(True)
-        self.global_flexi_table.setSortingEnabled(True)
-        self.global_flexi_table.verticalHeader().setVisible(False)
-        self.global_flexi_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.global_flexi_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.global_flexi_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.global_flexi_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.global_flexi_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        self.global_flexi_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
-
-        table_layout.addWidget(self.global_flexi_table)
-        layout.addWidget(table_container, 1)
-
-        return page
-
-    def handle_tab_change(self, index: int):
-        if index == 1:
-            self.refresh_global_expenses_table()
-        elif index == 2:
-            self.refresh_global_flexi_table()
-
-    def refresh_dashboard_overview(self):
-        if not self.overview_cards:
-            return
-
-        sessions = list(self.all_sessions or [])
-        total_expenses = 0.0
-        total_net = 0.0
-        for session in sessions:
-            try:
-                total_expenses += float(getattr(session, "total_expense", 0.0) or 0.0)
-            except Exception:
-                pass
-            try:
-                total_net += float(getattr(session, "net_profit", 0.0) or 0.0)
-            except Exception:
-                pass
-
-        total_profit = max(total_net + total_expenses, 0.0)
-        net_balance = total_net
-
-        self.overview_cards["profit"]["value"].setText(f"{total_profit:,.2f} دج")
-        self.overview_cards["expenses"]["value"].setText(f"{total_expenses:,.2f} دج")
-        self.overview_cards["balance"]["value"].setText(f"{net_balance:,.2f} دج")
-
-        if net_balance >= 0:
-            self.overview_cards["balance"]["value"].setStyleSheet("color: #0ea5e9; font-weight:800;")
-        else:
-            self.overview_cards["balance"]["value"].setStyleSheet("color: #ef4444; font-weight:800;")
-
-        if sessions:
-            latest_session = max(
-                sessions,
-                key=lambda s: getattr(s, "start_time", None) or getattr(s, "end_time", None) or datetime.datetime.min,
-            )
-            timestamp = getattr(latest_session, "end_time", None) or getattr(latest_session, "start_time", None)
-            self.overview_cards["profit"]["caption"].setText(
-                f"آخر تحديث {self._format_datetime(timestamp, fallback='—')}"
-            )
-            self.overview_cards["expenses"]["caption"].setText(f"إجمالي {len(sessions)} جلسات")
-        else:
-            self.overview_cards["profit"]["caption"].setText("—")
-            self.overview_cards["expenses"]["caption"].setText("—")
-
-        self.overview_cards["balance"]["caption"].setText(
-            "نتيجة الربح - المصاريف" if sessions else "—"
-        )
-
-    def refresh_global_expenses_table(self):
-        if not self.global_expenses_table:
-            return
-
-        rows = []
-        for session in self.all_sessions or []:
-            transactions = list(getattr(session, "transactions", []) or [])
-            if not transactions:
-                try:
-                    transactions = self.db_session.query(Transaction).filter_by(session_id=session.id).all()
-                except Exception:
-                    transactions = []
-            for txn in transactions:
-                if getattr(txn, "type", "") != "expense":
-                    continue
-                amount = float(getattr(txn, "amount", 0.0) or 0.0)
-                rows.append(
-                    (
-                        getattr(txn, "id", "—"),
-                        session.id,
-                        self._format_datetime(getattr(txn, "timestamp", None)),
-                        amount,
-                        getattr(txn, "description", ""),
-                    )
-                )
-
-        self.global_expenses_table.setSortingEnabled(False)
-        self.global_expenses_table.setRowCount(len(rows))
-        for row_index, row_data in enumerate(rows):
-            for column_index, value in enumerate(row_data):
-                item = QTableWidgetItem(str(value))
-                if column_index in (0, 1, 3):
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if column_index == 3:
-                    item.setText(f"{float(value):,.2f}")
-                self.global_expenses_table.setItem(row_index, column_index, item)
-        self.global_expenses_table.setSortingEnabled(True)
-        self.filter_expenses_table(self.expenses_search_input.text() if hasattr(self, "expenses_search_input") else "")
-
-    def refresh_global_flexi_table(self):
-        if not self.global_flexi_table:
-            return
-
-        rows = []
-        for session in self.all_sessions or []:
-            flexi_records = list(getattr(session, "flexi_transactions", []) or [])
-            if not flexi_records:
-                try:
-                    flexi_records = self.db_session.query(FlexiTransaction).filter_by(session_id=session.id).all()
-                except Exception:
-                    flexi_records = []
-            for record in flexi_records:
-                amount = float(getattr(record, "amount", 0.0) or 0.0)
-                is_paid = getattr(record, "is_paid", False)
-                status_text = "مدفوع" if is_paid else "غير مدفوع"
-                rows.append(
-                    (
-                        getattr(record, "id", "—"),
-                        session.id,
-                        self._format_datetime(getattr(record, "timestamp", None)),
-                        amount,
-                        status_text,
-                        getattr(record, "description", ""),
-                    )
-                )
-
-        self.global_flexi_table.setSortingEnabled(False)
-        self.global_flexi_table.setRowCount(len(rows))
-        for row_index, row_data in enumerate(rows):
-            for column_index, value in enumerate(row_data):
-                item = QTableWidgetItem(str(value))
-                if column_index in (0, 1, 3, 4):
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if column_index == 3:
-                    item.setText(f"{float(value):,.2f}")
-                self.global_flexi_table.setItem(row_index, column_index, item)
-        self.global_flexi_table.setSortingEnabled(True)
-        self.filter_flexi_table(self.flexi_search_input.text() if hasattr(self, "flexi_search_input") else "")
-
-    def filter_expenses_table(self, text: str):
-        if not self.global_expenses_table:
-            return
-        query = (text or "").strip().lower()
-        for row in range(self.global_expenses_table.rowCount()):
-            visible = not query
-            if not visible:
-                for column in range(self.global_expenses_table.columnCount()):
-                    item = self.global_expenses_table.item(row, column)
-                    if item and query in item.text().lower():
-                        visible = True
-                        break
-            self.global_expenses_table.setRowHidden(row, not visible)
-
-    def filter_flexi_table(self, text: str):
-        if not self.global_flexi_table:
-            return
-        query = (text or "").strip().lower()
-        for row in range(self.global_flexi_table.rowCount()):
-            visible = not query
-            if not visible:
-                for column in range(self.global_flexi_table.columnCount()):
-                    item = self.global_flexi_table.item(row, column)
-                    if item and query in item.text().lower():
-                        visible = True
-                        break
-            self.global_flexi_table.setRowHidden(row, not visible)
-
-    def toggle_theme(self, enabled: bool):
-        self.dark_mode = bool(enabled)
-        if hasattr(self, "theme_toggle"):
-            self.theme_toggle.setText("☀️ الوضع الفاتح" if self.dark_mode else "🌙 الوضع الليلي")
-        self.apply_styles()
-        self.refresh_analytics_charts()
-
-    def refresh_analytics_charts(self):
-        if not QTCHARTS_AVAILABLE:
-            return
-        if not self.revenue_chart_view or not self.breakdown_chart_view:
-            return
-
-        sessions = sorted(
-            list(self.all_sessions or []),
-            key=lambda s: getattr(s, "start_time", None) or getattr(s, "end_time", None) or datetime.datetime.min,
-        )
-
-        profit_series = QLineSeries()
-        profit_series.setName("الأرباح")
-        profit_series.setColor(QColor("#22c55e"))
-
-        expense_series = QLineSeries()
-        expense_series.setName("المصاريف")
-        expense_series.setColor(QColor("#ef4444"))
-
-        max_value = 0.0
-        for session in sessions:
-            reference_time = getattr(session, "start_time", None) or getattr(session, "end_time", None)
-            if not reference_time:
-                reference_time = datetime.datetime.now()
-            if reference_time.tzinfo is not None:
-                reference_time = reference_time.astimezone(datetime.timezone.utc).replace(tzinfo=datetime.timezone.utc)
-            timestamp_ms = int(reference_time.timestamp() * 1000)
-
-            total_expense = float(getattr(session, "total_expense", 0.0) or 0.0)
-            total_net = float(getattr(session, "net_profit", 0.0) or 0.0)
-            estimated_profit = max(total_net + total_expense, 0.0)
-
-            profit_series.append(timestamp_ms, estimated_profit)
-            expense_series.append(timestamp_ms, total_expense)
-
-            max_value = max(max_value, estimated_profit, total_expense)
-
-        revenue_chart = QChart()
-        revenue_chart.addSeries(profit_series)
-        revenue_chart.addSeries(expense_series)
-        revenue_chart.legend().setAlignment(Qt.AlignmentFlag.AlignBottom)
-        revenue_chart.setAnimationOptions(QChart.AnimationOption.SeriesAnimations)
-        revenue_chart.setBackgroundVisible(False)
-        revenue_chart.setDropShadowEnabled(False)
-        revenue_chart.setTitle("تدفق الأرباح والمصاريف")
-
-        axis_x = QDateTimeAxis()
-        axis_x.setFormat("dd/MM")
-        axis_x.setTitleText("التاريخ")
-        axis_y = QValueAxis()
-        axis_y.setLabelFormat("%.0f")
-        axis_y.setTitleText("المبلغ (دج)")
-        axis_y.setRange(0, max_value * 1.1 if max_value else 10)
-
-        revenue_chart.addAxis(axis_x, Qt.AlignmentFlag.AlignBottom)
-        revenue_chart.addAxis(axis_y, Qt.AlignmentFlag.AlignLeft)
-        profit_series.attachAxis(axis_x)
-        profit_series.attachAxis(axis_y)
-        expense_series.attachAxis(axis_x)
-        expense_series.attachAxis(axis_y)
-
-        self._apply_chart_palette(revenue_chart)
-        self.revenue_chart_view.setChart(revenue_chart)
-
-        total_expenses = sum(float(getattr(s, "total_expense", 0.0) or 0.0) for s in sessions)
-        total_profit = sum(max(float(getattr(s, "net_profit", 0.0) or 0.0) + float(getattr(s, "total_expense", 0.0) or 0.0), 0.0) for s in sessions)
-
-        breakdown_chart = QChart()
-        breakdown_chart.setTitle("نسبة الأرباح إلى المصاريف")
-        breakdown_chart.setAnimationOptions(QChart.AnimationOption.SeriesAnimations)
-        breakdown_chart.setBackgroundVisible(False)
-        breakdown_chart.setDropShadowEnabled(False)
-
-        pie_series = QPieSeries()
-        profit_value = max(total_profit, 0.0)
-        expense_value = max(total_expenses, 0.0)
-        if profit_value == 0 and expense_value == 0:
-            pie_series.append("لا توجد بيانات", 1)
-        else:
-            if profit_value:
-                pie_series.append("الأرباح", profit_value)
-            if expense_value:
-                pie_series.append("المصاريف", expense_value)
-
-        for slice_ in pie_series.slices():
-            slice_.setLabelVisible(True)
-            if slice_.label() == "الأرباح":
-                slice_.setBrush(QColor("#22c55e"))
-            elif slice_.label() == "المصاريف":
-                slice_.setBrush(QColor("#ef4444"))
-
-        breakdown_chart.addSeries(pie_series)
-        breakdown_chart.legend().setAlignment(Qt.AlignmentFlag.AlignBottom)
-        self._apply_chart_palette(breakdown_chart)
-        self.breakdown_chart_view.setChart(breakdown_chart)
-
-    def _create_chart_placeholder(self, title: str, description: str) -> QFrame:
-        placeholder = QFrame()
-        placeholder.setObjectName("ChartPlaceholder")
-
-        layout = QVBoxLayout(placeholder)
-        layout.setContentsMargins(16, 18, 16, 18)
-        layout.setSpacing(10)
-
-        icon_label = QLabel("📊")
-        icon_label.setObjectName("PlaceholderIcon")
-        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("PlaceholderTitle")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_label.setWordWrap(True)
-
-        description_label = QLabel(description)
-        description_label.setObjectName("PlaceholderDescription")
-        description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        description_label.setWordWrap(True)
-
-        layout.addWidget(icon_label)
-        layout.addWidget(title_label)
-        layout.addWidget(description_label)
-
-        return placeholder
-
-    def _apply_chart_palette(self, chart: Optional["ChartBase"]):
-        if not QTCHARTS_AVAILABLE or chart is None:
-            return
-        title_color = QColor("#f8fafc") if self.dark_mode else QColor("#0f172a")
-        text_color = QColor("#e2e8f0") if self.dark_mode else QColor("#475569")
-        chart.setTitleBrush(title_color)
-        chart.legend().setLabelColor(text_color)
-        for axis in chart.axes():
-            axis.setLabelsColor(text_color)
-            axis.setTitleBrush(text_color)
-
-    def _format_datetime(self, value, fallback: str = "—") -> str:
-        if not value:
-            return fallback
-        try:
-            if isinstance(value, datetime.datetime):
-                if value.tzinfo is not None:
-                    value = value.astimezone(datetime.timezone.utc).replace(tzinfo=None)
-                return value.strftime("%d/%m/%Y %H:%M")
-        except Exception:
-            pass
-        try:
-            return str(value)
-        except Exception:
-            return fallback
-
-
-    def apply_styles(self):
-        palette_light = {
-            "window_bg": "#e7f0ff",
-            "surface": "#ffffff",
-            "surface_alt": "#f1f5f9",
-            "muted_surface": "rgba(148, 163, 184, 0.16)",
-            "muted_surface_hover": "rgba(148, 163, 184, 0.26)",
-            "muted_surface_pressed": "rgba(148, 163, 184, 0.38)",
-            "border": "rgba(148, 163, 184, 0.35)",
-            "accent": "#2563eb",
-            "accent_hover": "#1d4ed8",
-            "accent_pressed": "#1e40af",
-            "accent_border": "rgba(37, 99, 235, 0.45)",
-            "accent_text": "#ffffff",
-            "text_primary": "#0f172a",
-            "text_muted": "#64748b",
-            "success": "#16a34a",
-            "success_hover": "#22c55e",
-            "success_pressed": "#15803d",
-            "danger": "#dc2626",
-            "danger_hover": "#ef4444",
-            "danger_pressed": "#b91c1c",
-            "secondary": "#0ea5e9",
-            "secondary_hover": "#0284c7",
-            "secondary_pressed": "#0369a1",
-            "disabled_surface": "rgba(148, 163, 184, 0.2)",
-            "disabled_text": "rgba(15, 23, 42, 0.45)",
-        }
-        palette_dark = {
-            "window_bg": "#0f172a",
-            "surface": "#1e293b",
-            "surface_alt": "#111827",
-            "muted_surface": "rgba(148, 163, 184, 0.12)",
-            "muted_surface_hover": "rgba(148, 163, 184, 0.22)",
-            "muted_surface_pressed": "rgba(148, 163, 184, 0.32)",
-            "border": "rgba(148, 163, 184, 0.25)",
-            "accent": "#38bdf8",
-            "accent_hover": "#0ea5e9",
-            "accent_pressed": "#0284c7",
-            "accent_border": "rgba(14, 165, 233, 0.45)",
-            "accent_text": "#0f172a",
-            "text_primary": "#e2e8f0",
-            "text_muted": "#94a3b8",
-            "success": "#4ade80",
-            "success_hover": "#22c55e",
-            "success_pressed": "#16a34a",
-            "danger": "#f87171",
-            "danger_hover": "#ef4444",
-            "danger_pressed": "#dc2626",
-            "secondary": "#0284c7",
-            "secondary_hover": "#0ea5e9",
-            "secondary_pressed": "#0369a1",
-            "disabled_surface": "rgba(148, 163, 184, 0.18)",
-            "disabled_text": "rgba(226, 232, 240, 0.4)",
-        }
-
-        palette = palette_dark if self.dark_mode else palette_light
-
-        accent_styles = {
-            "emerald": {"bg": "rgba(34, 197, 94, 0.18)", "color": "#047857"},
-            "rose": {"bg": "rgba(244, 114, 182, 0.2)", "color": "#be123c"},
-            "indigo": {"bg": "rgba(99, 102, 241, 0.18)", "color": "#4338ca"},
-            "cyan": {"bg": "rgba(14, 165, 233, 0.2)", "color": "#0e7490"},
-            "violet": {"bg": "rgba(139, 92, 246, 0.18)", "color": "#6d28d9"},
-        }
-
-        stylesheet = f"""
-            QMainWindow {{
-                background-color: {palette['window_bg']};
-                color: {palette['text_primary']};
-                font-family: 'Tajawal', 'Cairo', 'Segoe UI', sans-serif;
-            }}
-            QScrollArea#DetailsScrollArea {{
-                border: none;
-                background: transparent;
-            }}
-            QWidget#DetailsContent {{
-                background-color: {palette['surface_alt']};
-            }}
-            #HistoryWidget {{
-                background-color: {palette['surface']};
-                border-right: 1px solid {palette['border']};
-            }}
-            #HistoryTitle {{
-                font-size: 16pt;
-                font-weight: 800;
-                color: {palette['text_primary']};
-                padding: 20px 18px 10px;
-                background: transparent;
-            }}
-            QLineEdit#HistorySearch, QLineEdit, QComboBox {{
-                padding: 12px 14px;
-                border-radius: 16px;
-                border: 1px solid {palette['border']};
-                background-color: {palette['surface']};
-                color: {palette['text_primary']};
-                selection-background-color: {palette['accent']};
-                font-size: 11.5pt;
-            }}
-            QLineEdit:focus, QComboBox:focus {{
-                border: 1px solid {palette['accent']};
-                background-color: {palette['surface_alt']};
-            }}
-            QComboBox QListView {{
-                background-color: {palette['surface']};
-                border-radius: 12px;
-                color: {palette['text_primary']};
-            }}
-            QListWidget#SessionsList {{
-                padding: 16px 18px 24px;
-                background: transparent;
-                border: none;
-            }}
-            QWidget#HistoryItem {{
-                background: transparent;
-            }}
-            QFrame#HistoryCard {{
-                border: 1px solid {palette['border']};
-                border-radius: 18px;
-                background-color: {palette['surface']};
-            }}
-            QFrame#ChartPlaceholder {{
-                border: 1px dashed {palette['border']};
-                border-radius: 20px;
-                background-color: {palette['surface']};
-                padding: 12px;
-            }}
-            QFrame#ChartPlaceholder QLabel#PlaceholderIcon {{
-                font-size: 28pt;
-            }}
-            QFrame#ChartPlaceholder QLabel#PlaceholderTitle {{
-                font-size: 12.5pt;
-                font-weight: 700;
-                color: {palette['text_primary']};
-            }}
-            QFrame#ChartPlaceholder QLabel#PlaceholderDescription {{
-                font-size: 11pt;
-                color: {palette['text_muted']};
-            }}
-            QLabel#HistoryItemDate {{
-                font-size: 12pt;
-                color: {palette['text_primary']};
-            }}
-            QLabel#HistoryItemTime {{
-                font-size: 10pt;
-                color: {palette['text_muted']};
-            }}
-            QLabel#HistoryItemNote {{
-                color: {palette['text_primary']};
-            }}
-            QLabel#StatusBadge {{
-                font-size: 10pt;
-                font-weight: 600;
-            }}
-            QPushButton {{
-                border-radius: 16px;
-                padding: 12px 20px;
-                font-size: 10.5pt;
-                font-weight: 600;
-                border: none;
-                background-color: {palette['muted_surface']};
-                color: {palette['text_primary']};
-            }}
-            QPushButton#PrimaryButton {{
-                background-color: {palette['accent']};
-                color: {palette['accent_text']};
-            }}
-            QPushButton#SecondaryButton {{
-                background-color: {palette['secondary']};
-                color: #ffffff;
-            }}
-            QPushButton#SuccessButton {{
-                background-color: {palette['success']};
-                color: #ffffff;
-            }}
-            QPushButton#DangerButton {{
-                background-color: {palette['danger']};
-                color: #ffffff;
-            }}
-            QPushButton:hover {{
-                background-color: {palette['muted_surface_hover']};
-            }}
-            QPushButton:pressed {{
-                background-color: {palette['muted_surface_pressed']};
-            }}
-            QPushButton:disabled {{
-                background-color: {palette['disabled_surface']};
-                color: {palette['disabled_text']};
-            }}
-            QPushButton#PrimaryButton:hover {{
-                background-color: {palette['accent_hover']};
-            }}
-            QPushButton#PrimaryButton:pressed {{
-                background-color: {palette['accent_pressed']};
-            }}
-            QPushButton#SecondaryButton:hover {{
-                background-color: {palette['secondary_hover']};
-            }}
-            QPushButton#SecondaryButton:pressed {{
-                background-color: {palette['secondary_pressed']};
-            }}
-            QPushButton#SuccessButton:hover {{
-                background-color: {palette['success_hover']};
-            }}
-            QPushButton#SuccessButton:pressed {{
-                background-color: {palette['success_pressed']};
-            }}
-            QPushButton#DangerButton:hover {{
-                background-color: {palette['danger_hover']};
-            }}
-            QPushButton#DangerButton:pressed {{
-                background-color: {palette['danger_pressed']};
-            }}
-            QToolButton#ThemeToggle {{
-                padding: 12px 20px;
-                border-radius: 18px;
-                background-color: {palette['muted_surface']};
-                color: {palette['text_muted']};
-            }}
-            QToolButton#ThemeToggle:checked {{
-                background-color: {palette['accent']};
-                color: {palette['accent_text']};
-            }}
-            QLabel#SessionContextLabel {{
-                background-color: {palette['muted_surface']};
-                border: 1px solid {palette['border']};
-                border-radius: 16px;
-                padding: 18px;
-                color: {palette['text_primary']};
-                font-size: 11.5pt;
-            }}
-            #SummaryContainer {{
-                background-color: {palette['surface']};
-                border-radius: 24px;
-                border: 1px solid {palette['border']};
-            }}
-            QFrame#SummaryCard {{
-                background-color: {palette['surface']};
-                border-radius: 20px;
-                border: 1px solid {palette['border']};
-                padding: 20px 22px;
-            }}
-            QLabel#SummaryCardIcon {{
-                border-radius: 18px;
-                min-width: 44px;
-                min-height: 44px;
-                font-size: 20pt;
-            }}
-            QLabel#SummaryCardTitle {{ font-size: 12pt; font-weight: 700; color: {palette['text_muted']}; }}
-            QLabel#SummaryCardValue {{ font-size: 26pt; font-weight: 800; color: {palette['text_primary']}; }}
-            QLabel#SummaryCardCaption {{ font-size: 10pt; color: {palette['text_muted']}; }}
-            QWidget#OverviewBar {{
-                background-color: {palette['surface']};
-                border-radius: 24px;
-                border: 1px solid {palette['border']};
-            }}
-            #Container {{
-                background-color: {palette['surface']};
-                border: 1px solid {palette['border']};
-                border-radius: 20px;
-                padding: 24px;
-            }}
-            #SectionTitle {{
-                font-size: 15.5pt;
-                font-weight: 700;
-                color: {palette['text_primary']};
-                margin-bottom: 18px;
-            }}
-            QTabWidget#NavigationTabs::pane {{
-                border: none;
-            }}
-            QTabWidget#NavigationTabs::tab-bar {{
-                left: 0px;
-            }}
-            QTabBar::tab {{
-                background: transparent;
-                margin: 6px 0;
-                padding: 14px 18px;
-                min-width: 160px;
-                border-radius: 18px;
-                color: {palette['text_muted']};
-            }}
-            QTabBar::tab:selected {{
-                background: {palette['surface']};
-                color: {palette['text_primary']};
-                font-weight: 700;
-                border: 1px solid {palette['accent_border']};
-            }}
-            QTabBar::tab:hover {{
-                background: {palette['muted_surface']};
-            }}
-            QTableWidget {{
-                border: none;
-                font-size: 11pt;
-                background-color: {palette['surface']};
-                gridline-color: {palette['border']};
-                alternate-background-color: {palette['surface_alt']};
-                color: {palette['text_primary']};
-                selection-background-color: {palette['accent']};
-                selection-color: {palette['accent_text']};
-            }}
-            QHeaderView::section {{
-                background-color: {palette['surface_alt']};
-                padding: 14px 10px;
-                border: none;
-                border-bottom: 2px solid {palette['border']};
-                font-weight: 700;
-                font-size: 10pt;
-                color: {palette['text_muted']};
-            }}
-            QTextEdit {{
-                border: 1px solid {palette['border']};
-                border-radius: 14px;
-                padding: 12px;
-                font-size: 11pt;
-                background-color: {palette['surface']};
-                color: {palette['text_primary']};
-            }}
-            QTextEdit:focus {{
-                border: 1px solid {palette['accent']};
-                background-color: {palette['surface_alt']};
-            }}
-            QSplitter::handle {{ background: {palette['border']}; }}
-            QSplitter::handle:vertical {{ height: 1px; }}
-            QSplitter::handle:horizontal {{ width: 1px; }}
-        """
-
-        for accent_name, colors in accent_styles.items():
-            stylesheet += (
-                f"QFrame#SummaryCard[accentColor=\"{accent_name}\"] QLabel#SummaryCardIcon {{ "
-                f"background-color: {colors['bg']}; color: {colors['color']}; }}"
-            )
-            stylesheet += (
-                f"QFrame#SummaryCard[accentColor=\"{accent_name}\"] QLabel#SummaryCardValue {{ "
-                f"color: {colors['color']}; }}"
-            )
-
-        self.setStyleSheet(stylesheet)
-
-        tables = [
-            getattr(self, "transactions_table", None),
-            getattr(self, "flexi_transactions_table", None),
-            getattr(self, "global_expenses_table", None),
-            getattr(self, "global_flexi_table", None),
-        ]
-        for table in tables:
-            if table:
-                table.setAlternatingRowColors(True)
-
-    def load_user_sessions_history(self):
-        # Fix #6: Sessions Ordering - This was already correct.
-        # Try to eager-load transactions if SQLAlchemy is available; fallback to simple query for mock session
-        try:
-            if joinedload:
-                sessions = (
-                    self.db_session.query(CashSession)
-                    .options(joinedload(CashSession.transactions))
-                    .filter_by(user_id=self.user.id)
-                    .order_by(CashSession.start_time.desc())
-                    .all()
-                )
-            else:
-                sessions = (
-                    self.db_session.query(CashSession)
-                    .filter_by(user_id=self.user.id)
-                    .order_by(CashSession.start_time.desc())
-                    .all()
-                )
-        except Exception:
-            sessions = (
-                self.db_session.query(CashSession)
-                .filter_by(user_id=self.user.id)
+    def fetch(self) -> Dict[str, object]:
+        with SessionLocal() as db:
+            sessions: List[CashSession] = (
+                db.query(CashSession)
+                .filter(CashSession.user_id == self.user.id)
                 .order_by(CashSession.start_time.desc())
                 .all()
             )
 
-        self.all_sessions = sessions
-        preferred_id = self.selected_session_id or (self.current_session.id if self.current_session else None)
-        self.populate_sessions_list(sessions, preferred_id=preferred_id)
-        self.refresh_dashboard_overview()
-        self.refresh_global_expenses_table()
-        self.refresh_global_flexi_table()
-        self.refresh_analytics_charts()
+            session_rows: List[Dict] = []
+            expense_rows: List[Dict] = []
+            flexi_rows: List[Dict] = []
+            trend_map: Dict = defaultdict(lambda: {"income": 0.0, "expense": 0.0})
 
-    def populate_sessions_list(self, sessions, preferred_id=None):
-        self.sessions_history_list.blockSignals(True)
-        self.sessions_history_list.clear()
+            total_income = 0.0
+            total_expense = 0.0
+            open_sessions = 0
 
-        for session in sessions:
-            list_item = QListWidgetItem(self.sessions_history_list)
-            list_item.setData(Qt.ItemDataRole.UserRole, session.id)
-            item_widget = SessionHistoryItem(session)
-            item_widget.adjustSize()
-            list_item.setSizeHint(item_widget.sizeHint())
-            self.sessions_history_list.setItemWidget(list_item, item_widget)
+            for session in sessions:
+                transactions: Sequence[Transaction] = list(session.transactions)
+                flexi_ops: Sequence[FlexiTransaction] = list(session.flexi_transactions)
 
-        self.sessions_history_list.blockSignals(False)
+                income_sum = sum(t.amount for t in transactions if t.type == "income")
+                expense_sum = sum(t.amount for t in transactions if t.type == "expense")
+                profit = income_sum - expense_sum
+                flexi_consumed = session.flexi_consumed or 0.0
+                start_balance = session.start_balance or 0.0
+                end_balance = session.end_balance
 
-        QTimer.singleShot(0, self._refresh_history_item_metrics)
+                if session.status == "open":
+                    open_sessions += 1
 
-        if not sessions:
-            self.selected_session_id = None
-            self.display_session_details(None)
-            return
+                total_income += income_sum
+                total_expense += expense_sum
 
-        target_id = preferred_id if preferred_id and any(s.id == preferred_id for s in sessions) else sessions[0].id
-        for index in range(self.sessions_history_list.count()):
-            item = self.sessions_history_list.item(index)
-            if item.data(Qt.ItemDataRole.UserRole) == target_id:
-                self.sessions_history_list.setCurrentRow(index)
-                break
+                day_key = session.start_time.date() if session.start_time else None
+                if day_key is not None:
+                    trend_map[day_key]["income"] += income_sum
+                    trend_map[day_key]["expense"] += expense_sum
 
-    def filter_sessions_history(self, text: str):
-        if not self.all_sessions:
-            return
-
-        status_value = None
-        if hasattr(self, "session_status_filter") and self.session_status_filter is not None:
-            status_value = self.session_status_filter.currentData()
-
-        query = (text or "").strip().lower()
-        filtered = []
-        for session in self.all_sessions:
-            if status_value and getattr(session, "status", None) != status_value:
-                continue
-
-            if not query:
-                filtered.append(session)
-                continue
-
-            note = (session.notes or "").lower()
-            status = (session.status or "").lower()
-            session_id_str = str(session.id)
-            start_time_str = session.start_time.strftime('%d/%m/%Y %H:%M') if session.start_time else ""
-            user_name = getattr(session.user, 'username', '')
-            user_name_lower = user_name.lower() if user_name else ""
-
-            if any(
-                query in field
-                for field in [note, status, session_id_str, start_time_str.lower(), user_name_lower]
-            ):
-                filtered.append(session)
-
-        preferred_id = self.selected_session_id or (self.current_session.id if self.current_session else None)
-        self.populate_sessions_list(filtered, preferred_id=preferred_id)
-
-    def _refresh_history_item_metrics(self):
-        if not getattr(self, "sessions_history_list", None):
-            return
-
-        viewport = self.sessions_history_list.viewport()
-        available_width = viewport.width()
-
-        if available_width <= 0:
-            available_width = self.history_widget.width() - 12
-
-        orientation = self.main_splitter.orientation() if getattr(self, "main_splitter", None) else Qt.Orientation.Horizontal
-
-        if orientation == Qt.Orientation.Horizontal:
-            max_width = self.history_widget.maximumWidth() or available_width
-            available_width = min(max_width, available_width)
-        else:
-            # Allow the cards to stretch wider when the history column stacks on top.
-            available_width = max(available_width, self.width() - 80)
-
-        available_width = max(available_width, self.history_widget.minimumWidth())
-
-        for index in range(self.sessions_history_list.count()):
-            item = self.sessions_history_list.item(index)
-            widget = self.sessions_history_list.itemWidget(item)
-            if not widget:
-                continue
-
-            widget.update_card_width(available_width)
-            hint = widget.sizeHint()
-            item.setSizeHint(QSize(available_width, hint.height()))
-
-        self.sessions_history_list.updateGeometries()
-
-    def update_responsive_layouts(self):
-        if not getattr(self, "details_layout", None):
-            return
-
-        width = max(self.width(), 1)
-
-        if width < 780:
-            detail_margins = (18, 14, 18, 14)
-            detail_spacing = 16
-            summary_padding = 14
-            summary_spacing = 12
-            action_spacing = 6
-            button_width = 130
-            history_widths = (280, max(width, 700))
-            desired_orientation = Qt.Orientation.Vertical
-        elif width < 1180:
-            detail_margins = (24, 18, 24, 18)
-            detail_spacing = 18
-            summary_padding = 20
-            summary_spacing = 16
-            action_spacing = 8
-            button_width = 142
-            history_widths = (320, max(width, 860))
-            desired_orientation = Qt.Orientation.Vertical
-        elif width < 1480:
-            detail_margins = (30, 20, 30, 20)
-            detail_spacing = 20
-            summary_padding = 24
-            summary_spacing = 18
-            action_spacing = 10
-            button_width = 150
-            history_widths = (340, 520)
-            desired_orientation = Qt.Orientation.Horizontal
-        elif width < 1800:
-            detail_margins = (34, 22, 34, 22)
-            detail_spacing = 22
-            summary_padding = 26
-            summary_spacing = 22
-            action_spacing = 12
-            button_width = 160
-            history_widths = (360, 560)
-            desired_orientation = Qt.Orientation.Horizontal
-        else:
-            detail_margins = (40, 24, 40, 24)
-            detail_spacing = 24
-            summary_padding = 30
-            summary_spacing = 24
-            action_spacing = 14
-            button_width = 172
-            history_widths = (380, 640)
-            desired_orientation = Qt.Orientation.Horizontal
-
-        if getattr(self, "_current_splitter_orientation", None) != desired_orientation:
-            self.main_splitter.blockSignals(True)
-            self.main_splitter.setOrientation(desired_orientation)
-            self._current_splitter_orientation = desired_orientation
-            self._last_splitter_sizes = None
-            self.main_splitter.blockSignals(False)
-            QTimer.singleShot(0, self._refresh_history_item_metrics)
-
-        if desired_orientation == Qt.Orientation.Horizontal:
-            self.history_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        else:
-            self.history_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.history_widget.updateGeometry()
-
-        if self._current_detail_metrics != (detail_margins, detail_spacing):
-            self.details_layout.setContentsMargins(*detail_margins)
-            self.details_layout.setSpacing(detail_spacing)
-            self._current_detail_metrics = (detail_margins, detail_spacing)
-
-        if self._current_summary_padding != (summary_padding, summary_spacing):
-            self.summary_grid.setContentsMargins(summary_padding, summary_padding, summary_padding, summary_padding)
-            self.summary_grid.setHorizontalSpacing(summary_spacing)
-            self.summary_grid.setVerticalSpacing(summary_spacing)
-            self._current_summary_padding = (summary_padding, summary_spacing)
-
-        if self._current_action_spacing != action_spacing:
-            self.actions_flow.setSpacing(action_spacing)
-            self._current_action_spacing = action_spacing
-
-        if self._current_button_min_width != button_width:
-            for btn in self.action_buttons:
-                btn.setMinimumWidth(button_width)
-            self._current_button_min_width = button_width
-
-        min_width, max_width = history_widths
-        if (self.history_widget.minimumWidth(), self.history_widget.maximumWidth()) != history_widths:
-            self.history_widget.setMinimumWidth(min_width)
-            self.history_widget.setMaximumWidth(max_width)
-            self._last_splitter_sizes = None
-
-        self.rebalance_splitter()
-
-    def rebalance_splitter(self):
-        if not getattr(self, "main_splitter", None):
-            return
-
-        orientation = self.main_splitter.orientation()
-
-        if orientation == Qt.Orientation.Horizontal:
-            total_width = max(self.main_splitter.size().width(), self.width(), 1)
-            history_min = self.history_widget.minimumWidth()
-            history_max = self.history_widget.maximumWidth()
-
-            if total_width < 1480:
-                history_ratio = 0.40
-            elif total_width < 1800:
-                history_ratio = 0.36
-            else:
-                history_ratio = 0.33
-
-            target_history = int(total_width * history_ratio)
-            target_history = max(history_min, min(history_max, target_history))
-            target_details = max(total_width - target_history, history_min)
-
-            proposed = [target_history, target_details]
-        else:
-            total_height = max(self.main_splitter.size().height(), self.height(), 1)
-            top_min = max(self.history_widget.minimumHeight(), 220)
-            target_history = max(int(total_height * 0.44), top_min)
-            target_details = max(total_height - target_history, 320)
-            proposed = [target_history, target_details]
-
-        if proposed != self._last_splitter_sizes:
-            self.main_splitter.setSizes(proposed)
-            self._last_splitter_sizes = proposed
-            QTimer.singleShot(0, self._refresh_history_item_metrics)
-
-    def update_summary_grid_layout(self, force=False):
-        if not hasattr(self, "summary_grid") or not self.summary_grid:
-            return
-        if not getattr(self, "summary_cards", None):
-            return
-
-        container_width = self.summary_container.width() or self.width()
-        if container_width < 560:
-            columns = 1
-        elif container_width < 920:
-            columns = 2
-        elif container_width < 1320:
-            columns = 3
-        else:
-            columns = 4
-
-        if not force and self._summary_column_count == columns:
-            return
-
-        self._summary_column_count = columns
-
-        while self.summary_grid.count():
-            item = self.summary_grid.takeAt(0)
-            widget = item.widget()
-            if widget and widget not in self.summary_cards:
-                widget.setParent(None)
-
-        for index, card in enumerate(self.summary_cards):
-            row = index // columns
-            column = index % columns
-            self.summary_grid.addWidget(card, row, column)
-
-        for column in range(6):
-            self.summary_grid.setColumnStretch(column, 1 if column < columns else 0)
-
-    def update_summary_display(self, session):
-        if session:
-            # Recalculate total_expense from transactions (only expense type)
-            transactions = getattr(session, 'transactions', None)
-            if not transactions:
-                try:
-                    transactions = self.db_session.query(Transaction).filter_by(session_id=session.id).all()
-                except Exception:
-                    transactions = []
-
-            expense_transactions = [t for t in transactions if getattr(t, 'type', 'expense') == 'expense']
-            total_expense = sum(getattr(t, 'amount', 0.0) for t in expense_transactions)
-            operations_count = len(expense_transactions)
-
-            self.start_balance_card.set_value(f"<b>{session.start_balance:,.2f}</b>")
-            opened_at = session.start_time.strftime('%d/%m/%Y %H:%M') if session.start_time else ""
-            self.start_balance_card.set_caption(f"تم فتح الجلسة: {opened_at}" if opened_at else "جارٍ المتابعة")
-
-            self.total_expense_card.set_value(f"<b>{total_expense:,.2f}</b>")
-            self.total_expense_card.set_caption(f"{operations_count} عملية مصروف مسجلة")
-
-            # Flexi summary
-            flexi_additions = getattr(session, 'flexi_transactions', [])
-            if not flexi_additions:
-                try:
-                    flexi_additions = self.db_session.query(FlexiTransaction).filter_by(session_id=session.id).all()
-                except Exception:
-                    flexi_additions = []
-
-            total_flexi_additions = sum(t.amount for t in flexi_additions)
-            flexi_operations = len(flexi_additions)
-
-            # Use end_flexi if closed, otherwise calculate from start + additions
-            if session.status == 'closed' and session.end_flexi is not None:
-                current_flexi = session.end_flexi
-            else:
-                current_flexi = (session.start_flexi or 0.0) + total_flexi_additions
-
-            self.current_flexi_card.set_value(f"<b>{current_flexi:,.2f}</b>")
-            self.current_flexi_card.set_caption(f"{flexi_operations} حركة فليكسي")
-
-            # -- تعديل --: حساب الفرق النقدي بشكل منفصل
-            # هنا يتم حساب الربح الصافي بعد خصم الفليكسي المستهلك
-            if session.end_balance is not None and session.end_flexi is not None:
-                cash_difference = session.net_cash_difference
-            else:
-                cash_difference = (session.start_balance or 0.0) - total_expense
-            self.net_profit_card.set_value(f"<b>{cash_difference:+.2f}</b>")
-            self.net_profit_card.set_caption("الجلسة مغلقة" if session.status == 'closed' else "قيد العمل")
-
-            # -- تعديل --: حساب الفليكسي المستهلك
-            flexi_consumed = session.flexi_consumed if session.end_flexi is not None else 0
-            self.flexi_consumed_card.set_value(f"<b>{flexi_consumed:,.2f}</b>")
-            self.flexi_consumed_card.set_caption(
-                "يظهر بالكامل بعد الإغلاق" if session.end_flexi is None else "إجمالي الفليكسي المستهلك"
-            )
-
-            # -- إضافة --: حساب الربح الصافي الكلي
-            # (الرصيد الفعلي - رصيد البداية - المصاريف) + (إضافات الفليكسي - الفليكسي المستهلك)
-            recorded_flexi_additions = getattr(session, 'total_flexi_additions', total_flexi_additions)
-            if session.end_balance is not None:
-                total_net_profit = (
-                    (session.end_balance - (session.start_balance or 0.0) - total_expense)
-                    + (recorded_flexi_additions - flexi_consumed)
-                )
-            else:
-                total_net_profit = (
-                    (session.start_balance or 0.0) - total_expense
-                    + (recorded_flexi_additions - flexi_consumed)
+                session_rows.append(
+                    {
+                        "id": session.id,
+                        "status": session.status,
+                        "start": session.start_time,
+                        "end": session.end_time,
+                        "owner": self.user.username,
+                        "start_display": format_datetime(session.start_time),
+                        "end_display": format_datetime(session.end_time),
+                        "duration": format_duration(session.start_time, session.end_time),
+                        "start_balance": start_balance,
+                        "end_balance": end_balance,
+                        "income": income_sum,
+                        "expense": expense_sum,
+                        "profit": profit,
+                        "flexi_consumed": flexi_consumed,
+                        "notes": session.notes or "",
+                        "recent_display": format_datetime(session.end_time or session.start_time),
+                    }
                 )
 
-            self.total_net_profit_card.set_value(f"<b>{total_net_profit:,.2f}</b>")
-            closed_at = session.end_time.strftime('%d/%m/%Y %H:%M') if getattr(session, 'end_time', None) else ""
-            self.total_net_profit_card.set_caption(
-                f"أغلقت في {closed_at}" if closed_at else "يتم التحديث مع إقفال الجلسة"
-            )
+                for txn in transactions:
+                    if txn.type != "expense":
+                        continue
+                    expense_rows.append(
+                        {
+                            "description": txn.description or "—",
+                            "amount": txn.amount,
+                            "session_id": session.id,
+                            "timestamp": txn.timestamp,
+                        }
+                    )
 
-        else:
-            self.start_balance_card.set_value("<b>--</b>")
-            self.start_balance_card.set_caption("")
-            self.total_expense_card.set_value("<b>--</b>")
-            self.total_expense_card.set_caption("")
-            self.current_flexi_card.set_value("<b>--</b>")
-            self.current_flexi_card.set_caption("")
-            self.net_profit_card.set_value("<b>--</b>")
-            self.net_profit_card.set_caption("")
-            self.flexi_consumed_card.set_value("<b>--</b>")
-            self.flexi_consumed_card.set_caption("")
-            self.total_net_profit_card.set_value("<b>--</b>")
-            self.total_net_profit_card.set_caption("")
+                for record in flexi_ops:
+                    flexi_rows.append(
+                        {
+                            "description": record.description or "—",
+                            "amount": record.amount,
+                            "is_paid": bool(record.is_paid),
+                            "timestamp": record.timestamp,
+                        }
+                    )
 
-    def select_session_from_history(self, current_item, previous_item):
-        # Fix #3: Selection Indicator - This logic was already correct.
-        if previous_item:
-            prev_widget = self.sessions_history_list.itemWidget(previous_item)
-            if isinstance(prev_widget, SessionHistoryItem):
-                prev_widget.set_selected_state(False)
-        if current_item:
-            current_widget = self.sessions_history_list.itemWidget(current_item)
-            if isinstance(current_widget, SessionHistoryItem):
-                current_widget.set_selected_state(True)
-            session_id = current_item.data(Qt.ItemDataRole.UserRole)
-            self.selected_session_id = session_id
-            # Try to eager-load transactions if SQLAlchemy is available; fallback to simple query for mock session
-            try:
-                if joinedload:
-                    selected_session = self.db_session.query(CashSession).options(joinedload(CashSession.transactions), joinedload(CashSession.flexi_transactions)).filter_by(id=session_id).one()
-                else:
-                    selected_session = self.db_session.query(CashSession).filter_by(id=session_id).one()
-            except Exception:
-                selected_session = self.db_session.query(CashSession).filter_by(id=session_id).one()
-            self.display_session_details(selected_session)
-        else:
-            self.selected_session_id = None
-            self.display_session_details(None)
+            expense_rows.sort(key=lambda row: row["timestamp"] or 0, reverse=True)
+            flexi_rows.sort(key=lambda row: row["timestamp"] or 0, reverse=True)
 
-    def check_for_open_session(self):
-        open_session = self.db_session.query(CashSession).filter_by(user_id=self.user.id, status='open').first()
-        if open_session:
-            self.current_session = open_session
-            self.selected_session_id = open_session.id
-            for i in range(self.sessions_history_list.count()):
-                item = self.sessions_history_list.item(i)
-                if item.data(Qt.ItemDataRole.UserRole) == open_session.id:
-                    self.sessions_history_list.setCurrentRow(i)
-                    break
-        else:
-            self.current_session = None
-        self.update_ui_for_session_status()
+            sorted_days = sorted(trend_map.keys())
+            trend_labels = [day.strftime("%d/%m") for day in sorted_days]
+            trend_income = [trend_map[day]["income"] for day in sorted_days]
+            trend_expense = [trend_map[day]["expense"] for day in sorted_days]
 
-    def display_session_details(self, session):
-        if session is None:
-            self.load_transactions(None)
-            self.load_flexi_transactions(None)
-            self.update_summary_display(None)
-            self.notes_editor.clear()
-            self.notes_editor.setReadOnly(True)
-            self.save_notes_btn.setEnabled(False)
-            if hasattr(self, "session_context_label"):
-                self.session_context_label.setText("اختر جلسة من السجل لعرض تفاصيلها.")
-            return
+            total_sessions = len(session_rows)
+            net_profit = total_income - total_expense
+            average_profit = net_profit / total_sessions if total_sessions else 0.0
 
-        self.load_transactions(session)
-        self.load_flexi_transactions(session)
-        self.update_summary_display(session)
-        self.notes_editor.setText(session.notes or "")
-        if getattr(self, "details_scroll", None):
-            try:
-                self.details_scroll.verticalScrollBar().setValue(0)
-            except Exception:
-                pass
+            summary = {
+                "profit": total_income,
+                "expenses": total_expense,
+                "balance": net_profit,
+                "total_sessions": total_sessions,
+                "open_sessions": open_sessions,
+                "expense_count": len(expense_rows),
+                "average_profit": average_profit,
+            }
 
-        status_text = "مفتوحة" if session.status == 'open' else "مغلقة"
-        start_text = session.start_time.strftime('%d/%m/%Y %H:%M') if session.start_time else "غير محدد"
-        end_text = session.end_time.strftime('%d/%m/%Y %H:%M') if getattr(session, 'end_time', None) else ""
-        owner_name = getattr(session.user, 'username', None) or self.user.username
+            return {
+                "summary": summary,
+                "sessions": session_rows,
+                "recent_sessions": session_rows[:6],
+                "expenses": expense_rows,
+                "flexi": flexi_rows,
+                "trend": {
+                    "labels": trend_labels,
+                    "income": trend_income,
+                    "expense": trend_expense,
+                },
+                "pie": {
+                    "profit": max(net_profit, 0.0),
+                    "expense": total_expense,
+                },
+            }
 
-        context_lines = [
-            f"<b>جلسة رقم {session.id}</b> — الحالة: {status_text}",
-            f"بدأت في {start_text}" + (f" • أغلقت في {end_text}" if end_text else ""),
-            f"المسؤول: {owner_name}",
-        ]
 
-        if self.current_session and self.current_session.status == 'open' and session.id != self.current_session.id:
-            context_lines.append(
-                f"<span style='color:#dc2626;'>ملاحظة: الأوامر (إضافة مصروف/فليكسي) ستطبق على الجلسة المفتوحة رقم {self.current_session.id}.</span>"
-            )
+class UserDashboard(ModernDashboardWindow):
+    """Main dashboard window for cashiers with a curated, modern layout."""
 
-        if hasattr(self, "session_context_label"):
-            self.session_context_label.setText("<br/>".join(context_lines))
-
-        is_current_open = bool(
-            self.current_session
-            and session.id == self.current_session.id
-            and self.current_session.status == 'open'
+    def __init__(self, user) -> None:
+        super().__init__(
+            window_title="لوحة المستخدم - النسخة الخرافية",
+            brand_title="لوحة القيادة",
+            brand_tagline="جميع الجلسات، المصاريف، والفليكسي في واجهة واحدة",
+            user=user,
         )
-        self.notes_editor.setReadOnly(not is_current_open)
-        self.save_notes_btn.setEnabled(is_current_open)
+        self.repository = DashboardRepository(user)
+        self.summary_cards: Dict[str, SummaryCard] = {}
 
-    def open_cash_session(self):
-        dialog = OpenCashDialog(self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            data = dialog.get_data()
-            if data is None:
-                CustomMessageBox.show_warning(self, "خطأ", "الرجاء إدخال قيم صحيحة.")
-                return
-            new_session = CashSession(user_id=self.user.id, start_balance=data["start_balance"], start_flexi=data["start_flexi"], start_time=datetime.datetime.now(datetime.timezone.utc))
-            try:
-                self.db_session.add(new_session)
-                self.db_session.commit()
-            except IntegrityError as e:
-                self.db_session.rollback()
-                CustomMessageBox.show_critical(self, "خطأ في فتح الصندوق", "حدث خطأ عند إنشاء الجلسة. الرجاء إعادة المحاولة.")
-                print("IntegrityError عند فتح جلسة:", e)
-                return
+        self._build_pages()
+        self._configure_actions()
+        self.refresh_dashboard()
 
-            self.db_session.refresh(new_session)
-            self.current_session = new_session
-            self.load_user_sessions_history()
-            self.check_for_open_session()
-            self.refresh_dashboard_overview()
-            self.refresh_global_expenses_table()
-            self.refresh_global_flexi_table()
-            self.refresh_analytics_charts()
+    # ------------------------------------------------------------------
+    # UI assembly
+    # ------------------------------------------------------------------
 
-    def add_expense(self):
-        if not self.current_session or self.current_session.status != 'open':
-            CustomMessageBox.show_warning(self, "تنبيه", "يجب فتح جلسة أولاً لإضافة مصروف.")
-            return
-        dialog = AddTransactionDialog(self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            data = dialog.transaction_data
-            new_transaction = Transaction(session_id=self.current_session.id, type='expense', amount=data['amount'], description=data['description'], timestamp=datetime.datetime.now(datetime.timezone.utc))
-            try:
-                self.db_session.add(new_transaction)
-                self.db_session.commit()
-            except IntegrityError as e:
-                self.db_session.rollback()
-                CustomMessageBox.show_critical(self, "خطأ", "حدث خطأ عند إضافة المصروف. حاول مرة أخرى.")
-                print("IntegrityError عند إضافة مصروف:", e)
-                return
+    def _configure_actions(self) -> None:
+        self.refresh_button.setToolTip("تحديث البيانات من قاعدة المعلومات")
+        self.refresh_button.clicked.connect(self.refresh_dashboard)
 
-            self.db_session.refresh(self.current_session)
-            self.load_transactions(self.current_session)
-            self.update_summary_display(self.current_session)
-            self.refresh_dashboard_overview()
-            self.refresh_global_expenses_table()
-            self.refresh_analytics_charts()
-            
-    def add_flexi(self):
-        if not self.current_session or self.current_session.status != 'open':
-            CustomMessageBox.show_warning(self, "تنبيه", "يجب فتح جلسة أولاً لإضافة فليكسي.")
-            return
-        dialog = AddFlexiDialog(self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            data = dialog.flexi_data
-            if data:
-                # -- تعديل --: إضافة خاصية is_paid
-                new_flexi_transaction = FlexiTransaction(session_id=self.current_session.id, amount=data['amount'], description=data['description'], user_id=self.user.id, timestamp=datetime.datetime.now(datetime.timezone.utc), is_paid=data['is_paid'])
-                try:
-                    self.db_session.add(new_flexi_transaction)
-                    self.db_session.commit()
-                except IntegrityError as e:
-                    self.db_session.rollback()
-                    CustomMessageBox.show_critical(self, "خطأ", "حدث خطأ عند إضافة الفليكسي. حاول مرة أخرى.")
-                    print("IntegrityError عند إضافة فليكسي:", e)
-                    return
-                
-            self.db_session.refresh(self.current_session)
-        self.load_flexi_transactions(self.current_session)
-        self.update_summary_display(self.current_session)
-        self.refresh_dashboard_overview()
-        self.refresh_global_flexi_table()
-        self.refresh_analytics_charts()
+        self.new_session_button = QPushButton("بدء جلسة جديدة")
+        self.new_session_button.setProperty("variant", "secondary")
+        self.add_header_button(self.new_session_button, before_refresh=True)
+        self.new_session_button.clicked.connect(self._show_new_session_placeholder)
 
-    def open_transaction_menu(self, position):
-        if not self.current_session or self.current_session.status == 'closed':
-            return
-        
-        menu = QMenu()
-        edit_action = menu.addAction("تعديل")
-        delete_action = menu.addAction("حذف")
-        
-        # Determine the row that was right-clicked to avoid relying on selection
-        row = self.transactions_table.rowAt(position.y())
-        if row < 0:
-            return
-        id_item = self.transactions_table.item(row, 0)
-        if not id_item:
-            return
-        transaction_id = id_item.data(Qt.ItemDataRole.UserRole)
-        action = menu.exec(self.transactions_table.mapToGlobal(position))
-        try:
-            transaction = self.db_session.get(Transaction, transaction_id)
-        except Exception:
-            transaction = None
-        
-        if not transaction: return
+        self.set_sidebar_footer("مرحباً %s! حافظ على تدفق العمل من خلال لوحة النسخة الخرافية." % self.user.username)
 
-        if action == edit_action:
-            self.edit_transaction(transaction)
-        elif action == delete_action:
-            self.delete_transaction(transaction)
+    def _build_pages(self) -> None:
+        self.add_nav_label("التصفح")
 
-    def edit_transaction(self, transaction_to_edit):
-        dialog = AddTransactionDialog(self, transaction=transaction_to_edit)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            data = dialog.transaction_data
-            transaction_to_edit.amount = data['amount']
-            transaction_to_edit.description = data['description']
-            try:
-                self.db_session.commit()
-            except Exception:
-                if hasattr(self.db_session, 'rollback'):
-                    self.db_session.rollback()
-            # reload current session from DB if possible
-            try:
-                if hasattr(self.db_session, 'get'):
-                    self.current_session = self.db_session.get(CashSession, self.current_session.id)
-                elif hasattr(self.db_session, 'get_session_by_id'):
-                    self.current_session = self.db_session.get_session_by_id(self.current_session.id)
-            except Exception:
-                pass
-            self.load_transactions(self.current_session)
-            self.update_summary_display(self.current_session)
-            self.refresh_dashboard_overview()
-            self.refresh_global_expenses_table()
-            self.refresh_analytics_charts()
-            
-    def delete_transaction(self, transaction_to_delete):
-        if CustomMessageBox.show_question(self, 'تأكيد الحذف', f"هل أنت متأكد من حذف هذا المصروف؟"):
-            self.db_session.delete(transaction_to_delete)
-            try:
-                self.db_session.commit()
-            except Exception:
-                if hasattr(self.db_session, 'rollback'):
-                    self.db_session.rollback()
-            # reload current session from DB if possible
-            try:
-                if hasattr(self.db_session, 'get'):
-                    self.current_session = self.db_session.get(CashSession, self.current_session.id)
-                elif hasattr(self.db_session, 'get_session_by_id'):
-                    self.current_session = self.db_session.get_session_by_id(self.current_session.id)
-            except Exception:
-                pass
-            self.load_transactions(self.current_session)
-            self.update_summary_display(self.current_session)
-            self.refresh_dashboard_overview()
-            self.refresh_global_expenses_table()
-            self.refresh_analytics_charts()
+        overview_page = self._create_overview_page()
+        self.add_page(
+            "overview",
+            title="نظرة عامة",
+            subtitle="ملخص مالي ورسوم بيانية لحركة الصندوق",
+            nav_label="🏠 نظرة عامة",
+            widget=overview_page,
+        )
 
-    def close_cash_session(self):
-        if not self.current_session: return
-        summary = {
-            'start_balance': self.current_session.start_balance, 
-            'total_expense': self.current_session.total_expense,
-            'start_flexi': self.current_session.start_flexi,
-            'total_flexi_additions': self.current_session.total_flexi_additions
+        sessions_page = self._create_sessions_page()
+        self.add_page(
+            "sessions",
+            title="سجل الجلسات",
+            subtitle="استعرض كل جلساتك مع تفاصيل دقيقة",
+            nav_label="🗂 الجلسات",
+            widget=sessions_page,
+        )
+
+        expenses_page = self._create_expenses_page()
+        self.add_page(
+            "expenses",
+            title="المصاريف",
+            subtitle="تابع المصاريف اليومية ورتبها بسهولة",
+            nav_label="💸 المصاريف",
+            widget=expenses_page,
+        )
+
+        flexi_page = self._create_flexi_page()
+        self.add_page(
+            "flexi",
+            title="عمليات الفليكسي",
+            subtitle="الفليكسي في مكان واحد مع حالة الدفع",
+            nav_label="➕ الفليكسي",
+            widget=flexi_page,
+        )
+
+    def _create_overview_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(20)
+
+        self.summary_grid = StatisticGrid()
+        self.summary_cards = {
+            "profit": SummaryCard("إجمالي الأرباح", role="positive"),
+            "expenses": SummaryCard("إجمالي المصاريف", role="negative"),
+            "balance": SummaryCard("صافي الرصيد", role="info"),
         }
-        dialog = CloseCashDialog(summary, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            data = dialog.get_data()
-            if data is None:
-                CustomMessageBox.show_warning(self, "خطأ", "الرجاء إدخال قيم صحيحة.")
-                return
-            
-            session_to_close = self.current_session
-            session_to_close.end_balance = data["end_balance"]
-            session_to_close.end_flexi = data["end_flexi"]
-            session_to_close.status = 'closed'
-            session_to_close.end_time = datetime.datetime.now(datetime.timezone.utc)
-            try:
-                self.db_session.commit()
-            except Exception:
-                if hasattr(self.db_session, 'rollback'):
-                    self.db_session.rollback()
-            try:
-                if hasattr(self.db_session, 'get'):
-                    session_to_close = self.db_session.get(CashSession, session_to_close.id)
-                elif hasattr(self.db_session, 'get_session_by_id'):
-                    self.current_session = self.db_session.get_session_by_id(session_to_close.id)
-            except Exception:
-                pass
+        for card in self.summary_cards.values():
+            self.summary_grid.add_card(card)
+        layout.addWidget(self.summary_grid)
 
-            report_dialog = ClosingReportDialog(session_to_close, self)
-            report_dialog.exec()
-            
-            self.current_session = None
-            self.load_user_sessions_history()
-            self.update_ui_for_session_status()
+        charts_frame = QFrame()
+        charts_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        charts_layout.setContentsMargins(0, 0, 0, 0)
+        charts_layout.setSpacing(18)
+        charts_frame.setLayout(charts_layout)
+        self.charts_layout = charts_layout
 
-    def save_session_notes(self):
-        if not self.sessions_history_list.currentItem(): return
-        session_id_in_list = self.sessions_history_list.currentItem().data(Qt.ItemDataRole.UserRole)
-        session_to_update = self.db_session.get(CashSession, session_id_in_list)
-        if session_to_update and session_to_update.status == 'open':
-            session_to_update.notes = self.notes_editor.toPlainText()
-            self.db_session.commit()
-            CustomMessageBox.show_information(self, "نجاح", "تم حفظ الملاحظات بنجاح.")
-            self.load_user_sessions_history()
-            # Reselect the same row after reloading
-            for i in range(self.sessions_history_list.count()):
-                item = self.sessions_history_list.item(i)
-                if item.data(Qt.ItemDataRole.UserRole) == session_id_in_list:
-                    self.sessions_history_list.setCurrentRow(i)
-                    break
+        # Trend chart (line)
+        trend_container = QFrame()
+        self.trend_stack = QStackedLayout(trend_container)
+        if CHARTS_AVAILABLE:
+            self.revenue_chart = QChart()
+            self.revenue_chart.legend().setVisible(True)
+            self.revenue_chart.legend().setAlignment(Qt.AlignmentFlag.AlignBottom)
+            self.revenue_chart.setAnimationOptions(QChart.AnimationOption.SeriesAnimations)
 
-    def load_transactions(self, session):
-        self.transactions_table.setRowCount(0)
-        if not session: return
-        transactions = getattr(session, 'transactions', None)
-        if not transactions:
-            try:
-                transactions = self.db_session.query(Transaction).filter_by(session_id=session.id).all()
-            except Exception:
-                transactions = []
-        transactions = [t for t in transactions if getattr(t, 'type', 'expense') == 'expense']
-        transactions.sort(key=lambda x: x.timestamp, reverse=True)
-        for idx, transaction in enumerate(transactions, start=1):
-            row_position = self.transactions_table.rowCount()
-            self.transactions_table.insertRow(row_position)
-            index_item = QTableWidgetItem(str(idx))
-            # Format amount with thousands separator for readability
-            try:
-                amount_text = f"{transaction.amount:,.2f}"
-            except Exception:
-                amount_text = f"{getattr(transaction, 'amount', 0.0):.2f}"
-            amount_item = QTableWidgetItem(amount_text)
-            desc_item = QTableWidgetItem(transaction.description or "")
-            time_item = QTableWidgetItem(transaction.timestamp.strftime("%H:%M:%S"))
-            
-            # Store ID in the first item of the row for easy retrieval
-            index_item.setData(Qt.ItemDataRole.UserRole, transaction.id)
-            
-            # Align and set fonts for a cleaner, modern look
-            index_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            desc_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.revenue_chart_view = QChartView(self.revenue_chart)
+            self.revenue_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
+            self.trend_stack.addWidget(self.revenue_chart_view)
+        self.trend_placeholder = ChartPlaceholder("سيظهر الرسم البياني بعد تسجيل بعض الجلسات")
+        self.trend_stack.addWidget(self.trend_placeholder)
+        self.trend_stack.setCurrentWidget(self.trend_placeholder)
+        charts_layout.addWidget(trend_container, 3)
 
-            amount_font = QFont()
-            amount_font.setBold(True)
-            amount_item.setFont(amount_font)
+        # Pie chart
+        pie_container = QFrame()
+        self.pie_stack = QStackedLayout(pie_container)
+        if CHARTS_AVAILABLE:
+            self.pie_chart = QChart()
+            self.pie_chart.legend().setVisible(True)
+            self.pie_chart.legend().setAlignment(Qt.AlignmentFlag.AlignBottom)
+            self.pie_chart_view = QChartView(self.pie_chart)
+            self.pie_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
+            self.pie_stack.addWidget(self.pie_chart_view)
+        self.pie_placeholder = ChartPlaceholder("لم يتم رصد نسب الأرباح والمصاريف بعد")
+        self.pie_stack.addWidget(self.pie_placeholder)
+        self.pie_stack.setCurrentWidget(self.pie_placeholder)
+        charts_layout.addWidget(pie_container, 2)
 
-            self.transactions_table.setItem(row_position, 0, index_item)
-            self.transactions_table.setItem(row_position, 1, amount_item)
-            self.transactions_table.setItem(row_position, 2, desc_item)
-            self.transactions_table.setItem(row_position, 3, time_item)
+        layout.addWidget(charts_frame)
 
-            # Increase row height for accessibility
-            self.transactions_table.setRowHeight(row_position, 48)
-            # color by transaction type
-            if getattr(transaction, 'type', 'expense') == 'expense':
-                amount_item.setForeground(QColor("#dc3545"))
-            else:
-                amount_item.setForeground(QColor("#198754"))
-                
-    def load_flexi_transactions(self, session):
-        self.flexi_transactions_table.setRowCount(0)
-        if not session: return
-        transactions = getattr(session, 'flexi_transactions', [])
-        transactions.sort(key=lambda x: x.timestamp, reverse=True)
-        for idx, transaction in enumerate(transactions, start=1):
-            row_position = self.flexi_transactions_table.rowCount()
-            self.flexi_transactions_table.insertRow(row_position)
-            index_item = QTableWidgetItem(str(idx))
-            
-            amount_text = f"{transaction.amount:,.2f}"
-            amount_item = QTableWidgetItem(amount_text)
-            desc_item = QTableWidgetItem(transaction.description or "")
-            time_item = QTableWidgetItem(transaction.timestamp.strftime("%H:%M:%S"))
-            
-            index_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            desc_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            
-            amount_font = QFont()
-            amount_font.setBold(True)
-            amount_item.setFont(amount_font)
-            amount_item.setForeground(QColor("#198754")) # Positive color for flexi additions
+        recent_header = QLabel("أحدث الجلسات")
+        recent_header.setObjectName("SectionTitle")
+        layout.addWidget(recent_header)
 
-            self.flexi_transactions_table.setItem(row_position, 0, index_item)
-            self.flexi_transactions_table.setItem(row_position, 1, amount_item)
-            self.flexi_transactions_table.setItem(row_position, 2, desc_item)
-            self.flexi_transactions_table.setItem(row_position, 3, time_item)
-            self.flexi_transactions_table.setRowHeight(row_position, 48)
+        self.recent_table = RecordTable(
+            ["الجلسة", "الحالة", "الربح", "آخر تحديث"],
+            numeric_columns=[2],
+        )
+        layout.addWidget(self.recent_table)
 
+        return page
 
-    def update_ui_for_session_status(self):
-        has_open_session = self.current_session is not None
-        self.open_cash_btn.setEnabled(not has_open_session)
-        self.add_expense_btn.setEnabled(has_open_session)
-        self.add_flexi_btn.setEnabled(has_open_session)
-        self.close_cash_btn.setEnabled(has_open_session)
+    def _create_sessions_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(18)
 
-    def resizeEvent(self, event):
+        header = QLabel("سجل الجلسات الاحترافي")
+        header.setObjectName("SectionTitle")
+        layout.addWidget(header)
+
+        content_frame = QFrame()
+        content_layout = QHBoxLayout(content_frame)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(18)
+
+        self.sessions_table = SessionTable()
+        self.sessions_table.itemSelectionChanged.connect(self.handle_session_selection)
+        content_layout.addWidget(self.sessions_table, 3)
+
+        self.session_detail = SessionDetailCard()
+        content_layout.addWidget(self.session_detail, 2)
+
+        layout.addWidget(content_frame)
+        return page
+
+    def _create_expenses_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(18)
+
+        header = QLabel("مصروفاتك بالتفصيل")
+        header.setObjectName("SectionTitle")
+        layout.addWidget(header)
+
+        self.expenses_table = RecordTable(
+            ["الوصف", "المبلغ", "رقم الجلسة", "التاريخ"],
+            numeric_columns=[1],
+        )
+        layout.addWidget(self.expenses_table)
+        return page
+
+    def _create_flexi_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(18)
+
+        header = QLabel("إدارات الفليكسي")
+        header.setObjectName("SectionTitle")
+        layout.addWidget(header)
+
+        self.flexi_table = RecordTable(
+            ["الوصف", "المبلغ", "الحالة", "التاريخ"],
+            numeric_columns=[1],
+        )
+        layout.addWidget(self.flexi_table)
+        return page
+    # ------------------------------------------------------------------
+    # Data binding
+    # ------------------------------------------------------------------
+
+    def refresh_dashboard(self) -> None:  # type: ignore[override]
+        data = self.repository.fetch()
+        summary = data["summary"]
+
+        self.summary_cards["profit"].set_metric(
+            format_currency(summary["profit"]),
+            f"{summary['total_sessions']} جلسة مسجلة",
+        )
+        self.summary_cards["expenses"].set_metric(
+            format_currency(summary["expenses"]),
+            f"{summary['expense_count']} عملية مصروف",
+        )
+        average_caption = (
+            f"متوسط {format_currency(summary['average_profit'])} لكل جلسة"
+            if summary["total_sessions"]
+            else "ابدأ أول جلسة لك للبدء بالتحليل"
+        )
+        self.summary_cards["balance"].set_metric(
+            format_currency(summary["balance"]),
+            average_caption,
+        )
+
+        sessions: Sequence[Dict] = data["sessions"]  # type: ignore[assignment]
+        self.sessions_table.set_sessions(sessions)
+        if sessions:
+            self.sessions_table.selectRow(0)
+            self.session_detail.update_session(sessions[0])
+        else:
+            self.session_detail.clear()
+
+        self._update_recent_sessions(data["recent_sessions"])  # type: ignore[arg-type]
+        self._update_expenses(data["expenses"])  # type: ignore[arg-type]
+        self._update_flexi(data["flexi"])  # type: ignore[arg-type]
+        self._update_trend_chart(data["trend"])  # type: ignore[arg-type]
+        self._update_pie_chart(data["pie"])  # type: ignore[arg-type]
+
+    def _update_recent_sessions(self, sessions: Sequence[Dict]) -> None:
+        rows = []
+        for session in sessions:
+            rows.append(
+                [
+                    f"جلسة #{session['id']}",
+                    "مفتوحة" if session["status"] == "open" else "مغلقة",
+                    format_currency(session["profit"]),
+                    session["recent_display"],
+                ]
+            )
+        self.recent_table.set_records(rows)
+
+    def _update_expenses(self, expenses: Sequence[Dict]) -> None:
+        rows = []
+        for expense in expenses:
+            rows.append(
+                [
+                    expense["description"],
+                    format_currency(expense["amount"]),
+                    f"#{expense['session_id']}",
+                    format_datetime(expense["timestamp"]),
+                ]
+            )
+        self.expenses_table.set_records(rows)
+
+    def _update_flexi(self, records: Sequence[Dict]) -> None:
+        rows = []
+        for record in records:
+            rows.append(
+                [
+                    record["description"],
+                    format_currency(record["amount"]),
+                    "مدفوع" if record["is_paid"] else "قيد التحصيل",
+                    format_datetime(record["timestamp"]),
+                ]
+            )
+        self.flexi_table.set_records(rows)
+
+    def _update_trend_chart(self, trend: Dict[str, Sequence[float]]) -> None:
+        if not CHARTS_AVAILABLE:
+            self.trend_placeholder.set_message("قم بتثبيت PyQt6.QtCharts لعرض الرسم البياني")
+            self.trend_stack.setCurrentWidget(self.trend_placeholder)
+            return
+
+        labels = list(trend.get("labels", []))
+        incomes = list(trend.get("income", []))
+        expenses = list(trend.get("expense", []))
+
+        if not labels:
+            self.trend_stack.setCurrentWidget(self.trend_placeholder)
+            return
+
+        self.revenue_chart.removeAllSeries()
+        income_series = QLineSeries()
+        income_series.setName("الإيرادات")
+        expense_series = QLineSeries()
+        expense_series.setName("المصاريف")
+
+        for index, value in enumerate(incomes):
+            income_series.append(float(index), float(value))
+        for index, value in enumerate(expenses):
+            expense_series.append(float(index), float(value))
+
+        self.revenue_chart.addSeries(income_series)
+        self.revenue_chart.addSeries(expense_series)
+
+        axis_x = QCategoryAxis()
+        axis_x.setLabelsPosition(QCategoryAxis.AxisLabelsPosition.AxisLabelsPositionOnValue)
+        for index, label in enumerate(labels):
+            axis_x.append(label, float(index))
+        axis_x.setRange(0, max(len(labels) - 1, 0))
+
+        max_value = max(incomes + expenses) if incomes or expenses else 0.0
+        axis_y = QValueAxis()
+        axis_y.setLabelFormat("%.0f")
+        axis_y.setRange(0, max(max_value * 1.1, 10.0))
+
+        self.revenue_chart.setAxisX(axis_x, income_series)
+        self.revenue_chart.setAxisY(axis_y, income_series)
+        self.revenue_chart.setAxisX(axis_x, expense_series)
+        self.revenue_chart.setAxisY(axis_y, expense_series)
+
+        self.trend_stack.setCurrentWidget(self.revenue_chart_view)
+
+    def _update_pie_chart(self, pie: Dict[str, float]) -> None:
+        if not CHARTS_AVAILABLE:
+            self.pie_placeholder.set_message("قم بتثبيت PyQt6.QtCharts لعرض الرسم البياني")
+            self.pie_stack.setCurrentWidget(self.pie_placeholder)
+            return
+
+        profit = float(pie.get("profit", 0.0))
+        expense = float(pie.get("expense", 0.0))
+        total = profit + expense
+
+        if total <= 0:
+            self.pie_stack.setCurrentWidget(self.pie_placeholder)
+            return
+
+        self.pie_chart.removeAllSeries()
+        series = QPieSeries()
+        if profit > 0:
+            series.append("الأرباح", profit)
+        if expense > 0:
+            series.append("المصاريف", expense)
+        self.pie_chart.addSeries(series)
+        self.pie_stack.setCurrentWidget(self.pie_chart_view)
+
+    # ------------------------------------------------------------------
+    # Interactions
+    # ------------------------------------------------------------------
+
+    def handle_session_selection(self) -> None:
+        row = self.sessions_table.currentRow()
+        session = self.sessions_table.session_at(row)
+        self.session_detail.update_session(session)
+
+    def _show_new_session_placeholder(self) -> None:
+        QMessageBox.information(
+            self,
+            "قريباً",
+            "إدارة الجلسات من الواجهة الجديدة قيد التطوير. يمكنك حالياً مواصلة استخدام الأدوات التقليدية.",
+        )
+
+    # ------------------------------------------------------------------
+    # Responsiveness
+    # ------------------------------------------------------------------
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
-        self.update_summary_grid_layout()
-        self.update_responsive_layouts()
-        self._refresh_history_item_metrics()
+        width = event.size().width()
+        self.summary_grid.update_layout(width)
+        self._update_chart_layout(width)
 
-    def eventFilter(self, obj, event):
-        if obj is getattr(self, "summary_container", None) and event.type() == QEvent.Type.Resize:
-            self.update_summary_grid_layout()
-        return super().eventFilter(obj, event)
-
-    def closeEvent(self, event):
-        try:
-            self.db_session.close()
-        except Exception:
-            pass
-        event.accept()
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    db = SessionLocal()
-    # create or get user test (works with real DB or mock)
-    try:
-        test_user = db.query(User).filter_by(username='testuser').one()
-    except Exception:
-        try:
-            test_user = db.query(User).filter_by(username='testuser').first()
-        except Exception:
-            test_user = None
-    if not test_user:
-        try:
-            test_user = User(username='testuser', role='user')
-            test_user.set_password('123')
-            db.add(test_user)
-            try:
-                db.commit()
-            except Exception:
-                try:
-                    db.rollback()
-                except Exception:
-                    pass
-        except Exception:
-            test_user = User()
-    main_window = UserDashboard(user=test_user)
-    main_window.show()
-    try:
-        db.close()
-    except Exception:
-        pass
-    sys.exit(app.exec())
+    def _update_chart_layout(self, width: int) -> None:
+        if width < 1280:
+            self.charts_layout.setDirection(QBoxLayout.Direction.TopToBottom)
+        else:
+            self.charts_layout.setDirection(QBoxLayout.Direction.LeftToRight)
