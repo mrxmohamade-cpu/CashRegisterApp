@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewModels="clr-namespace:CashRegisterMaui.ViewModels"
+             x:Class="CashRegisterMaui.Views.UserDashboardPage"
+             Title="{Binding Title}">
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="16">
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="16">
+                <Frame Grid.Row="0" Grid.Column="0">
+                    <VerticalStackLayout>
+                        <Label Text="إجمالي المصروفات" FontAttributes="Bold" />
+                        <Label Text="{Binding Summary.TotalExpenses, StringFormat='{}{0:C}'}" FontSize="20" />
+                    </VerticalStackLayout>
+                </Frame>
+                <Frame Grid.Row="0" Grid.Column="1">
+                    <VerticalStackLayout>
+                        <Label Text="إجمالي الفليكسي" FontAttributes="Bold" />
+                        <Label Text="{Binding Summary.TotalFlexiAdditions, StringFormat='{}{0:C}'}" FontSize="20" />
+                    </VerticalStackLayout>
+                </Frame>
+                <Frame Grid.Row="1" Grid.Column="0">
+                    <VerticalStackLayout>
+                        <Label Text="الفليكسي المدفوع" FontAttributes="Bold" />
+                        <Label Text="{Binding Summary.TotalFlexiPaid, StringFormat='{}{0:C}'}" FontSize="20" />
+                    </VerticalStackLayout>
+                </Frame>
+                <Frame Grid.Row="1" Grid.Column="1">
+                    <VerticalStackLayout>
+                        <Label Text="الفارق النقدي" FontAttributes="Bold" />
+                        <Label Text="{Binding Summary.NetCashDifference, StringFormat='{}{0:C}'}" FontSize="20" />
+                    </VerticalStackLayout>
+                </Frame>
+            </Grid>
+
+            <Frame>
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="الجلسة الحالية" FontSize="20" />
+                    <Label Text="{Binding CurrentSession.OpenedAt, StringFormat='بدأت في {0:dd/MM/yyyy HH:mm}'}" />
+                    <Label Text="{Binding CurrentSession.IsClosed, StringFormat='مغلقة: {0}'}" />
+                    <Label Text="{Binding CurrentSession.Notes}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame>
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="فتح/إغلاق الجلسة" FontAttributes="Bold" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="16" RowSpacing="8">
+                        <Entry Grid.Column="0" Placeholder="رصيد بداية نقدي" Keyboard="Numeric" Text="{Binding OpeningCash}" />
+                        <Entry Grid.Column="1" Placeholder="رصيد بداية فليكسي" Keyboard="Numeric" Text="{Binding OpeningFlexi}" />
+                        <Entry Grid.Column="0" Grid.Row="1" Placeholder="رصيد نهاية نقدي" Keyboard="Numeric" Text="{Binding ClosingCash}" />
+                        <Entry Grid.Column="1" Grid.Row="1" Placeholder="رصيد نهاية فليكسي" Keyboard="Numeric" Text="{Binding ClosingFlexi}" />
+                    </Grid>
+                    <Editor Placeholder="ملاحظات" Text="{Binding SessionNotes}" AutoSize="TextChanges" />
+                    <HorizontalStackLayout Spacing="12">
+                        <Button Text="فتح جلسة" Command="{Binding OpenSessionCommand}" />
+                        <Button Text="إغلاق جلسة" Command="{Binding CloseSessionCommand}" />
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame>
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="إضافة مصروف" FontAttributes="Bold" />
+                    <Entry Placeholder="المبلغ" Keyboard="Numeric" Text="{Binding NewExpenseAmount}" />
+                    <Entry Placeholder="الوصف" Text="{Binding NewExpenseDescription}" />
+                    <Button Text="حفظ المصروف" Command="{Binding AddExpenseCommand}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame>
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="إضافة فليكسي" FontAttributes="Bold" />
+                    <Entry Placeholder="المبلغ" Keyboard="Numeric" Text="{Binding NewFlexiAmount}" />
+                    <HorizontalStackLayout Spacing="12" VerticalOptions="Center">
+                        <Label Text="مدفوع؟" VerticalOptions="Center" />
+                        <Switch IsToggled="{Binding NewFlexiIsPaid}">
+                            <Switch.ThumbColor>
+                                <AppThemeColor Light="{StaticResource PrimaryColor}" Dark="{StaticResource SecondaryColor}" />
+                            </Switch.ThumbColor>
+                        </Switch>
+                    </HorizontalStackLayout>
+                    <Entry Placeholder="ملاحظات" Text="{Binding NewFlexiNotes}" />
+                    <Button Text="حفظ الفليكسي" Command="{Binding AddFlexiCommand}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Label Text="آخر المصروفات" FontAttributes="Bold" FontSize="20" />
+            <CollectionView ItemsSource="{Binding RecentExpenses}">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Frame Margin="0,4">
+                            <VerticalStackLayout>
+                                <Label Text="{Binding Description}" />
+                                <Label Text="{Binding Amount, StringFormat='المبلغ: {0:C}'}" />
+                                <Label Text="{Binding CreatedAt, StringFormat='{0:dd/MM/yyyy HH:mm}'}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <Label Text="آخر عمليات الفليكسي" FontAttributes="Bold" FontSize="20" />
+            <CollectionView ItemsSource="{Binding RecentFlexi}">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Frame Margin="0,4">
+                            <VerticalStackLayout>
+                                <Label Text="{Binding Notes}" />
+                                <Label Text="{Binding Amount, StringFormat='المبلغ: {0:C}'}" />
+                                <Label Text="{Binding IsPaid, StringFormat='مدفوع: {0}'}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <Label Text="سجل الجلسات" FontAttributes="Bold" FontSize="20" />
+            <CollectionView ItemsSource="{Binding SessionHistory}">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Frame Margin="0,4">
+                            <VerticalStackLayout>
+                                <Label Text="{Binding OpenedAt, StringFormat='من {0:dd/MM/yyyy HH:mm}'}" />
+                                <Label Text="{Binding ClosedAt, StringFormat='إلى {0:dd/MM/yyyy HH:mm}'}" />
+                                <Label Text="{Binding NetCashDifference, StringFormat='الفارق: {0:C}'}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

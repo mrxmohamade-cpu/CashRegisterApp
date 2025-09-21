@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.Maui;assembly=LiveChartsCore.SkiaSharpView.Maui"
+             x:Class="CashRegisterMaui.Views.AdminDashboardPage"
+             Title="{Binding Title}">
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="16">
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="16">
+                <Frame Grid.Row="0" Grid.Column="0">
+                    <VerticalStackLayout>
+                        <Label Text="إجمالي المصروفات" FontAttributes="Bold" />
+                        <Label Text="{Binding Summary.TotalExpenses, StringFormat='{}{0:C}'}" FontSize="20" />
+                    </VerticalStackLayout>
+                </Frame>
+                <Frame Grid.Row="0" Grid.Column="1">
+                    <VerticalStackLayout>
+                        <Label Text="الفليكسي المستهلك" FontAttributes="Bold" />
+                        <Label Text="{Binding Summary.FlexiConsumed, StringFormat='{}{0:C}'}" FontSize="20" />
+                    </VerticalStackLayout>
+                </Frame>
+                <Frame Grid.Row="1" Grid.Column="0">
+                    <VerticalStackLayout>
+                        <Label Text="الأرباح" FontAttributes="Bold" />
+                        <Label Text="{Binding Summary.Profit, StringFormat='{}{0:C}'}" FontSize="20" />
+                    </VerticalStackLayout>
+                </Frame>
+                <Frame Grid.Row="1" Grid.Column="1">
+                    <VerticalStackLayout>
+                        <Label Text="الفليكسي المدفوع" FontAttributes="Bold" />
+                        <Label Text="{Binding Summary.TotalFlexiPaid, StringFormat='{}{0:C}'}" FontSize="20" />
+                    </VerticalStackLayout>
+                </Frame>
+            </Grid>
+
+            <Frame>
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="إدارة المستخدمين" FontSize="20" FontAttributes="Bold" />
+                    <Entry Placeholder="اسم المستخدم" Text="{Binding NewUsername}" />
+                    <Entry Placeholder="الاسم الكامل" Text="{Binding NewFullName}" />
+                    <Entry Placeholder="كلمة المرور" IsPassword="True" Text="{Binding NewPassword}" />
+                    <HorizontalStackLayout Spacing="12">
+                        <CheckBox IsChecked="{Binding NewIsAdmin}" />
+                        <Label Text="مشرف" VerticalOptions="Center" />
+                        <CheckBox IsChecked="{Binding NewIsActive}" />
+                        <Label Text="مفعل" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
+                    <HorizontalStackLayout Spacing="12">
+                        <Button Text="إضافة" Command="{Binding AddUserCommand}" />
+                        <Button Text="تحديث" Command="{Binding UpdateUserCommand}" />
+                        <Button Text="حذف" Command="{Binding DeleteUserCommand}" />
+                    </HorizontalStackLayout>
+                    <Label Text="{Binding StatusMessage}" TextColor="Green" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Label Text="قائمة العمال" FontAttributes="Bold" FontSize="20" />
+            <CollectionView ItemsSource="{Binding Users}" SelectionMode="Single" SelectedItem="{Binding SelectedUser}">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Frame Margin="0,4">
+                            <VerticalStackLayout>
+                                <Label Text="{Binding DisplayName}" />
+                                <Label Text="{Binding Role}" />
+                                <Label Text="{Binding IsActive, StringFormat='مفعل: {0}'}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <Label Text="تقرير الجلسات" FontAttributes="Bold" FontSize="20" />
+            <CollectionView ItemsSource="{Binding SessionReports}">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Frame Margin="0,4">
+                            <VerticalStackLayout>
+                                <Label Text="{Binding UserName}" />
+                                <Label Text="{Binding OpenedAt, StringFormat='{0:dd/MM/yyyy}'}" />
+                                <Label Text="{Binding NetCashDifference, StringFormat='الفارق: {0:C}'}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <Frame>
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="استهلاك الفليكسي حسب المستخدم" FontAttributes="Bold" FontSize="20" />
+                    <lvc:CartesianChart Series="{Binding FlexiSeries}" XAxes="{Binding FlexiXAxis}" />
+                </VerticalStackLayout>
+            </Frame>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>
