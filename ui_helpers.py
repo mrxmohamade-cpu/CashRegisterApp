@@ -4,22 +4,29 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Optional, Sequence
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QDoubleValidator
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLayout,
+    QLineEdit,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QStackedLayout,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
     QGraphicsDropShadowEffect,
@@ -374,6 +381,161 @@ class RecordTable(QTableWidget):
                 self.setItem(row_index, column, item)
 
 
+class NotesPanel(QFrame):
+    """Container that hosts the editable notes area for sessions."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("NotesPanel")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 22, 22, 22)
+        layout.setSpacing(12)
+
+        self.title_label = QLabel("ملاحظات الجلسة")
+        self.title_label.setObjectName("NotesTitle")
+
+        self.text_edit = QTextEdit()
+        self.text_edit.setPlaceholderText("دوّن ملاحظاتك هنا لتتبع التفاصيل الهامة...")
+        self.text_edit.setObjectName("NotesEditor")
+        self.text_edit.setMinimumHeight(120)
+
+        self.save_button = QPushButton("حفظ الملاحظات")
+        self.save_button.setProperty("variant", "secondary")
+
+        layout.addWidget(self.title_label)
+        layout.addWidget(self.text_edit)
+        layout.addWidget(self.save_button, alignment=Qt.AlignmentFlag.AlignRight)
+
+    def text(self) -> str:
+        return self.text_edit.toPlainText().strip()
+
+    def set_text(self, text: str) -> None:
+        self.text_edit.setPlainText(text or "")
+
+    def set_editable(self, editable: bool) -> None:
+        self.text_edit.setReadOnly(not editable)
+        self.save_button.setEnabled(editable)
+
+
+class TransactionTable(QTableWidget):
+    """Specialised table for listing expenses with modern spacing."""
+
+    HEADERS = ["#", "الوصف", "المبلغ", "الوقت"]
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(0, len(self.HEADERS), parent)
+        self._transactions: List[object] = []
+        self.setObjectName("TransactionTable")
+        self.setHorizontalHeaderLabels(self.HEADERS)
+        self.setAlternatingRowColors(True)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.verticalHeader().setVisible(False)
+        header = self.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+
+    def set_transactions(self, transactions: Sequence[object]) -> None:
+        self._transactions = list(transactions)
+        self.setRowCount(len(self._transactions))
+        for row, transaction in enumerate(self._transactions, start=1):
+            index_item = QTableWidgetItem(str(row))
+            index_item.setData(Qt.ItemDataRole.UserRole, getattr(transaction, "id", row))
+            index_item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
+
+            description = getattr(transaction, "description", "") or "—"
+            desc_item = QTableWidgetItem(description)
+
+            amount_text = format_currency(getattr(transaction, "amount", 0.0))
+            amount_item = QTableWidgetItem(amount_text)
+            amount_item.setTextAlignment(int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
+
+            timestamp = format_datetime(getattr(transaction, "timestamp", None))
+            time_item = QTableWidgetItem(timestamp)
+            time_item.setTextAlignment(int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
+
+            self.setItem(row - 1, 0, index_item)
+            self.setItem(row - 1, 1, desc_item)
+            self.setItem(row - 1, 2, amount_item)
+            self.setItem(row - 1, 3, time_item)
+            self.setRowHeight(row - 1, 44)
+
+    def transaction_at(self, row: int):
+        if 0 <= row < len(self._transactions):
+            return self._transactions[row]
+        return None
+
+    def clear_transactions(self) -> None:
+        self._transactions = []
+        self.setRowCount(0)
+
+
+class FlexiTable(QTableWidget):
+    """Table specialised for flexi transactions with payment status."""
+
+    HEADERS = ["#", "الوصف", "المبلغ", "الحالة", "الوقت"]
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(0, len(self.HEADERS), parent)
+        self._records: List[object] = []
+        self.setObjectName("FlexiTable")
+        self.setHorizontalHeaderLabels(self.HEADERS)
+        self.setAlternatingRowColors(True)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.verticalHeader().setVisible(False)
+        header = self.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+
+    def set_records(self, records: Sequence[object]) -> None:
+        self._records = list(records)
+        self.setRowCount(len(self._records))
+        for row, record in enumerate(self._records, start=1):
+            index_item = QTableWidgetItem(str(row))
+            index_item.setData(Qt.ItemDataRole.UserRole, getattr(record, "id", row))
+            index_item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
+
+            description = getattr(record, "description", "") or "—"
+            desc_item = QTableWidgetItem(description)
+
+            amount_text = format_currency(getattr(record, "amount", 0.0))
+            amount_item = QTableWidgetItem(amount_text)
+            amount_item.setTextAlignment(int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
+
+            is_paid = bool(getattr(record, "is_paid", False))
+            status_text = "مدفوع" if is_paid else "قيد التحصيل"
+            status_item = QTableWidgetItem(status_text)
+            status_item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
+
+            timestamp = format_datetime(getattr(record, "timestamp", None))
+            time_item = QTableWidgetItem(timestamp)
+            time_item.setTextAlignment(int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter))
+
+            self.setItem(row - 1, 0, index_item)
+            self.setItem(row - 1, 1, desc_item)
+            self.setItem(row - 1, 2, amount_item)
+            self.setItem(row - 1, 3, status_item)
+            self.setItem(row - 1, 4, time_item)
+            self.setRowHeight(row - 1, 44)
+
+    def record_at(self, row: int):
+        if 0 <= row < len(self._records):
+            return self._records[row]
+        return None
+
+    def clear_records(self) -> None:
+        self._records = []
+        self.setRowCount(0)
+
+
 class ChartPlaceholder(QFrame):
     """Displayed when the QtCharts module is not available or data is missing."""
 
@@ -393,6 +555,191 @@ class ChartPlaceholder(QFrame):
 
     def set_message(self, message: str) -> None:
         self.message_label.setText(message)
+
+
+# ---------------------------------------------------------------------------
+# Dialog helpers
+# ---------------------------------------------------------------------------
+
+
+class _BaseFinanceDialog(QDialog):
+    """Shared styling and validation helpers for dashboard dialogs."""
+
+    def __init__(self, title: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setMinimumWidth(420)
+        self._data: Optional[Dict[str, object]] = None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(18)
+        self.content_layout = QVBoxLayout()
+        self.content_layout.setSpacing(12)
+        layout.addLayout(self.content_layout)
+
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+
+    def data(self) -> Optional[Dict[str, object]]:
+        return self._data
+
+    # Sub-classes override to run validation and populate self._data
+    def _collect(self) -> Optional[Dict[str, object]]:
+        raise NotImplementedError
+
+    def accept(self) -> None:  # type: ignore[override]
+        payload = self._collect()
+        if payload is None:
+            QMessageBox.warning(self, "بيانات غير صالحة", "الرجاء التحقق من القيم المدخلة.")
+            return
+        self._data = payload
+        super().accept()
+
+
+class OpenSessionDialog(_BaseFinanceDialog):
+    """Collects the opening balances for a new cash session."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__("بدء جلسة جديدة", parent)
+        form = QFormLayout()
+        form.setSpacing(12)
+        self.cash_input = QLineEdit()
+        self.cash_input.setPlaceholderText("رصيد البداية النقدي")
+        self.cash_input.setValidator(QDoubleValidator(0.0, 999999999.99, 2))
+        self.flexi_input = QLineEdit()
+        self.flexi_input.setPlaceholderText("رصيد الفليكسي")
+        self.flexi_input.setValidator(QDoubleValidator(0.0, 999999999.99, 2))
+        form.addRow("الرصيد النقدي:", self.cash_input)
+        form.addRow("رصيد الفليكسي:", self.flexi_input)
+        self.content_layout.addLayout(form)
+
+    def _collect(self) -> Optional[Dict[str, object]]:
+        try:
+            start_balance = float(self.cash_input.text().strip() or 0.0)
+            start_flexi = float(self.flexi_input.text().strip() or 0.0)
+        except ValueError:
+            return None
+        if start_balance < 0 or start_flexi < 0:
+            return None
+        return {"start_balance": start_balance, "start_flexi": start_flexi}
+
+
+class CloseSessionDialog(_BaseFinanceDialog):
+    """Collects closing balances while presenting a quick summary."""
+
+    def __init__(self, summary: Dict[str, float], parent: Optional[QWidget] = None) -> None:
+        super().__init__("إغلاق الجلسة", parent)
+        summary_frame = QFrame()
+        summary_layout = QVBoxLayout(summary_frame)
+        summary_layout.setContentsMargins(0, 0, 0, 0)
+        summary_layout.setSpacing(6)
+
+        summary_label = QLabel(
+            "<b>ملخص سريع:</b>\n"
+            f"• الرصيد الافتتاحي: {format_currency(summary.get('start_balance', 0.0))}\n"
+            f"• المصاريف المسجلة: {format_currency(summary.get('total_expense', 0.0))}\n"
+            f"• الفليكسي المضاف: {format_currency(summary.get('flexi_added', 0.0))}"
+        )
+        summary_label.setWordWrap(True)
+        summary_layout.addWidget(summary_label)
+        self.content_layout.addWidget(summary_frame)
+
+        form = QFormLayout()
+        form.setSpacing(12)
+        self.end_cash_input = QLineEdit()
+        self.end_cash_input.setPlaceholderText("الرصيد النقدي عند الإغلاق")
+        self.end_cash_input.setValidator(QDoubleValidator(0.0, 999999999.99, 2))
+        self.end_flexi_input = QLineEdit()
+        self.end_flexi_input.setPlaceholderText("رصيد الفليكسي المتبقي")
+        self.end_flexi_input.setValidator(QDoubleValidator(0.0, 999999999.99, 2))
+        form.addRow("الرصيد النقدي الختامي:", self.end_cash_input)
+        form.addRow("رصيد الفليكسي الختامي:", self.end_flexi_input)
+        self.content_layout.addLayout(form)
+
+    def _collect(self) -> Optional[Dict[str, object]]:
+        try:
+            end_balance = float(self.end_cash_input.text().strip())
+            end_flexi_text = self.end_flexi_input.text().strip()
+            end_flexi = float(end_flexi_text) if end_flexi_text else 0.0
+        except ValueError:
+            return None
+        if end_balance < 0 or end_flexi < 0:
+            return None
+        return {"end_balance": end_balance, "end_flexi": end_flexi}
+
+
+class ExpenseDialog(_BaseFinanceDialog):
+    """Dialog used to add or edit an expense transaction."""
+
+    def __init__(self, parent: Optional[QWidget] = None, *, description: str = "", amount: float = 0.0) -> None:
+        super().__init__("تسجيل مصروف", parent)
+        form = QFormLayout()
+        form.setSpacing(12)
+        self.amount_input = QLineEdit(f"{amount:.2f}" if amount else "")
+        self.amount_input.setValidator(QDoubleValidator(0.0, 999999999.99, 2))
+        self.amount_input.setPlaceholderText("0.00")
+        self.desc_input = QLineEdit(description)
+        self.desc_input.setPlaceholderText("وصف المصروف")
+        form.addRow("المبلغ:", self.amount_input)
+        form.addRow("الوصف:", self.desc_input)
+        self.content_layout.addLayout(form)
+
+    def _collect(self) -> Optional[Dict[str, object]]:
+        try:
+            amount = float(self.amount_input.text().strip())
+        except ValueError:
+            return None
+        description = self.desc_input.text().strip()
+        if amount <= 0:
+            return None
+        return {"amount": amount, "description": description}
+
+
+class FlexiDialog(_BaseFinanceDialog):
+    """Dialog used to add or edit flexi top-ups."""
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        *,
+        description: str = "",
+        amount: float = 0.0,
+        is_paid: bool = False,
+    ) -> None:
+        super().__init__("تسجيل فليكسي", parent)
+        form = QFormLayout()
+        form.setSpacing(12)
+        self.amount_input = QLineEdit(f"{amount:.2f}" if amount else "")
+        self.amount_input.setValidator(QDoubleValidator(0.0, 999999999.99, 2))
+        self.amount_input.setPlaceholderText("0.00")
+        self.desc_input = QLineEdit(description)
+        self.desc_input.setPlaceholderText("وصف العملية")
+        self.paid_checkbox = QCheckBox("تم تحصيل المبلغ نقداً")
+        self.paid_checkbox.setChecked(is_paid)
+        form.addRow("المبلغ:", self.amount_input)
+        form.addRow("الوصف:", self.desc_input)
+        form.addRow("", self.paid_checkbox)
+        self.content_layout.addLayout(form)
+
+    def _collect(self) -> Optional[Dict[str, object]]:
+        try:
+            amount = float(self.amount_input.text().strip())
+        except ValueError:
+            return None
+        if amount <= 0:
+            return None
+        description = self.desc_input.text().strip()
+        return {
+            "amount": amount,
+            "description": description,
+            "is_paid": self.paid_checkbox.isChecked(),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -620,6 +967,11 @@ QFrame#DashboardSurface {
     color: #94a3b8;
     font-size: 11pt;
 }
+#SectionSubtitle {
+    color: #cbd5f5;
+    font-size: 11.5pt;
+    font-weight: 600;
+}
 QPushButton[variant="primary"] {
     background-color: #2563eb;
     color: white;
@@ -694,6 +1046,10 @@ QPushButton[isNav="true"]:checked {
     font-size: 10pt;
     color: #94a3b8;
 }
+#TransactionsFrame, #FlexiFrame {
+    background-color: #111827;
+    border-radius: 24px;
+}
 #SessionDetailCard {
     background-color: #111827;
     border-radius: 24px;
@@ -714,6 +1070,26 @@ QPushButton[isNav="true"]:checked {
 #SessionDetailCard #EmptyState {
     color: #64748b;
     font-size: 11pt;
+}
+#NotesPanel {
+    background-color: #111827;
+    border-radius: 24px;
+}
+#NotesPanel #NotesTitle {
+    font-size: 12pt;
+    font-weight: 600;
+    color: #f8fafc;
+}
+#NotesEditor {
+    background-color: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 16px;
+    color: #e2e8f0;
+    font-size: 10.5pt;
+    padding: 12px;
+}
+#NotesEditor:disabled {
+    color: #64748b;
 }
 #StatusBadge {
     border-radius: 12px;

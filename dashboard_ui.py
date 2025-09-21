@@ -1,6 +1,7 @@
 """Modern cashier dashboard with a clean, responsive layout."""
 from __future__ import annotations
 
+import datetime
 from collections import defaultdict
 from typing import Dict, List, Optional, Sequence
 
@@ -8,11 +9,14 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPainter
 from PyQt6.QtWidgets import (
     QBoxLayout,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QStackedLayout,
     QVBoxLayout,
     QWidget,
@@ -33,15 +37,26 @@ except ImportError:  # pragma: no cover - optional dependency
     CHARTS_AVAILABLE = False
     QCategoryAxis = QChart = QChartView = QLineSeries = QPieSeries = QValueAxis = None  # type: ignore
 
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
+
 from database_setup import CashSession, FlexiTransaction, SessionLocal, Transaction
 from ui_helpers import (
     ChartPlaceholder,
+    CloseSessionDialog,
+    FlexiDialog,
+    FlexiTable,
     ModernDashboardWindow,
+    NotesPanel,
+    OpenSessionDialog,
     RecordTable,
     SessionDetailCard,
     SessionTable,
     StatisticGrid,
     SummaryCard,
+    TransactionTable,
+    ExpenseDialog,
+    create_shadow,
     format_currency,
     format_datetime,
     format_duration,
@@ -189,6 +204,10 @@ class UserDashboard(ModernDashboardWindow):
         )
         self.repository = DashboardRepository(user)
         self.summary_cards: Dict[str, SummaryCard] = {}
+        self.db = SessionLocal()
+        self.current_session: Optional[CashSession] = None
+        self.current_session_id: Optional[int] = None
+        self.active_session: Optional[CashSession] = None
 
         self._build_pages()
         self._configure_actions()
@@ -205,7 +224,7 @@ class UserDashboard(ModernDashboardWindow):
         self.new_session_button = QPushButton("بدء جلسة جديدة")
         self.new_session_button.setProperty("variant", "secondary")
         self.add_header_button(self.new_session_button, before_refresh=True)
-        self.new_session_button.clicked.connect(self._show_new_session_placeholder)
+        self.new_session_button.clicked.connect(self.open_cash_session)
 
         self.set_sidebar_footer("مرحباً %s! حافظ على تدفق العمل من خلال لوحة النسخة الخرافية." % self.user.username)
 
@@ -327,19 +346,101 @@ class UserDashboard(ModernDashboardWindow):
         header.setObjectName("SectionTitle")
         layout.addWidget(header)
 
-        content_frame = QFrame()
-        content_layout = QHBoxLayout(content_frame)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(18)
+        actions_frame = QFrame()
+        actions_layout = QHBoxLayout(actions_frame)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(12)
+
+        self.open_session_btn = QPushButton("فتح جلسة")
+        self.open_session_btn.setProperty("variant", "secondary")
+        self.open_session_btn.clicked.connect(self.open_cash_session)
+        actions_layout.addWidget(self.open_session_btn)
+
+        self.add_expense_btn = QPushButton("إضافة مصروف")
+        self.add_expense_btn.setProperty("variant", "secondary")
+        self.add_expense_btn.clicked.connect(self.add_expense)
+        actions_layout.addWidget(self.add_expense_btn)
+
+        self.add_flexi_btn = QPushButton("إضافة فليكسي")
+        self.add_flexi_btn.setProperty("variant", "secondary")
+        self.add_flexi_btn.clicked.connect(self.add_flexi)
+        actions_layout.addWidget(self.add_flexi_btn)
+
+        self.close_session_btn = QPushButton("إغلاق الجلسة")
+        self.close_session_btn.setProperty("variant", "primary")
+        self.close_session_btn.clicked.connect(self.close_cash_session)
+        actions_layout.addWidget(self.close_session_btn)
+
+        actions_layout.addStretch(1)
+        layout.addWidget(actions_frame)
+
+        splitter = QSplitter()
+        splitter.setObjectName("SessionsSplitter")
+
+        left_panel = QFrame()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(12)
+
+        sessions_label = QLabel("الجلسات")
+        sessions_label.setObjectName("SectionSubtitle")
+        left_layout.addWidget(sessions_label)
 
         self.sessions_table = SessionTable()
         self.sessions_table.itemSelectionChanged.connect(self.handle_session_selection)
-        content_layout.addWidget(self.sessions_table, 3)
+        left_layout.addWidget(self.sessions_table)
+
+        splitter.addWidget(left_panel)
+
+        right_panel = QFrame()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(18)
 
         self.session_detail = SessionDetailCard()
-        content_layout.addWidget(self.session_detail, 2)
+        create_shadow(self.session_detail, blur=36, y_offset=18, alpha=70)
+        right_layout.addWidget(self.session_detail)
 
-        layout.addWidget(content_frame)
+        self.notes_panel = NotesPanel()
+        create_shadow(self.notes_panel, blur=36, y_offset=18, alpha=70)
+        self.notes_panel.save_button.clicked.connect(self.save_session_notes)
+        right_layout.addWidget(self.notes_panel)
+
+        transactions_frame = QFrame()
+        transactions_frame.setObjectName("TransactionsFrame")
+        transactions_layout = QVBoxLayout(transactions_frame)
+        transactions_layout.setContentsMargins(22, 22, 22, 22)
+        transactions_layout.setSpacing(12)
+        transactions_label = QLabel("المصاريف")
+        transactions_label.setObjectName("SectionSubtitle")
+        transactions_layout.addWidget(transactions_label)
+        self.transactions_table = TransactionTable()
+        self.transactions_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.transactions_table.customContextMenuRequested.connect(self._open_transaction_menu)
+        transactions_layout.addWidget(self.transactions_table)
+        create_shadow(transactions_frame, blur=32, y_offset=16, alpha=60)
+        right_layout.addWidget(transactions_frame)
+
+        flexi_frame = QFrame()
+        flexi_frame.setObjectName("FlexiFrame")
+        flexi_layout = QVBoxLayout(flexi_frame)
+        flexi_layout.setContentsMargins(22, 22, 22, 22)
+        flexi_layout.setSpacing(12)
+        flexi_label = QLabel("عمليات الفليكسي")
+        flexi_label.setObjectName("SectionSubtitle")
+        flexi_layout.addWidget(flexi_label)
+        self.flexi_table = FlexiTable()
+        self.flexi_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.flexi_table.customContextMenuRequested.connect(self._open_flexi_menu)
+        flexi_layout.addWidget(self.flexi_table)
+        create_shadow(flexi_frame, blur=32, y_offset=16, alpha=60)
+        right_layout.addWidget(flexi_frame)
+
+        splitter.addWidget(right_panel)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 4)
+
+        layout.addWidget(splitter)
         return page
 
     def _create_expenses_page(self) -> QWidget:
@@ -401,13 +502,34 @@ class UserDashboard(ModernDashboardWindow):
             average_caption,
         )
 
+        self._refresh_active_session()
+
         sessions: Sequence[Dict] = data["sessions"]  # type: ignore[assignment]
+        previous_id = self.current_session_id
         self.sessions_table.set_sessions(sessions)
         if sessions:
-            self.sessions_table.selectRow(0)
-            self.session_detail.update_session(sessions[0])
+            target_row = 0
+            if previous_id is not None:
+                for index, item in enumerate(sessions):
+                    if item["id"] == previous_id:
+                        target_row = index
+                        break
+            elif self.active_session is not None:
+                for index, item in enumerate(sessions):
+                    if item["id"] == self.active_session.id:
+                        target_row = index
+                        break
+            self.sessions_table.selectRow(target_row)
+            self.handle_session_selection()
         else:
+            self.current_session = None
+            self.current_session_id = None
             self.session_detail.clear()
+            self.notes_panel.set_text("")
+            self.notes_panel.set_editable(False)
+            self.transactions_table.clear_transactions()
+            self.flexi_table.clear_records()
+            self._update_action_states(None)
 
         self._update_recent_sessions(data["recent_sessions"])  # type: ignore[arg-type]
         self._update_expenses(data["expenses"])  # type: ignore[arg-type]
@@ -528,6 +650,63 @@ class UserDashboard(ModernDashboardWindow):
         self.pie_chart.addSeries(series)
         self.pie_stack.setCurrentWidget(self.pie_chart_view)
 
+    def _refresh_active_session(self) -> None:
+        try:
+            self.active_session = (
+                self.db.query(CashSession)
+                .options(joinedload(CashSession.transactions), joinedload(CashSession.flexi_transactions))
+                .filter(CashSession.user_id == self.user.id, CashSession.status == "open")
+                .first()
+            )
+        except Exception:
+            self.active_session = None
+
+    def _fetch_session(self, session_id: int) -> Optional[CashSession]:
+        try:
+            return (
+                self.db.query(CashSession)
+                .options(joinedload(CashSession.transactions), joinedload(CashSession.flexi_transactions))
+                .filter(CashSession.id == session_id)
+                .one_or_none()
+            )
+        except Exception:
+            return None
+
+    def _load_transactions(self) -> None:
+        if not self.current_session:
+            self.transactions_table.clear_transactions()
+            return
+        expenses = [
+            txn
+            for txn in getattr(self.current_session, "transactions", [])
+            if getattr(txn, "type", "expense") == "expense"
+        ]
+        expenses.sort(
+            key=lambda txn: getattr(txn, "timestamp", None) or datetime.datetime.min,
+            reverse=True,
+        )
+        self.transactions_table.set_transactions(expenses)
+
+    def _load_flexi_records(self) -> None:
+        if not self.current_session:
+            self.flexi_table.clear_records()
+            return
+        records = list(getattr(self.current_session, "flexi_transactions", []))
+        records.sort(
+            key=lambda record: getattr(record, "timestamp", None) or datetime.datetime.min,
+            reverse=True,
+        )
+        self.flexi_table.set_records(records)
+
+    def _update_action_states(self, status: Optional[str]) -> None:
+        has_open = self.active_session is not None
+        is_selected_open = status == "open"
+        self.new_session_button.setEnabled(not has_open)
+        self.open_session_btn.setEnabled(not has_open)
+        for button in (self.add_expense_btn, self.add_flexi_btn, self.close_session_btn):
+            button.setEnabled(is_selected_open)
+        self.notes_panel.set_editable(bool(is_selected_open))
+
     # ------------------------------------------------------------------
     # Interactions
     # ------------------------------------------------------------------
@@ -535,18 +714,346 @@ class UserDashboard(ModernDashboardWindow):
     def handle_session_selection(self) -> None:
         row = self.sessions_table.currentRow()
         session = self.sessions_table.session_at(row)
-        self.session_detail.update_session(session)
+        self._display_session(session)
 
-    def _show_new_session_placeholder(self) -> None:
-        QMessageBox.information(
-            self,
-            "قريباً",
-            "إدارة الجلسات من الواجهة الجديدة قيد التطوير. يمكنك حالياً مواصلة استخدام الأدوات التقليدية.",
+    def _display_session(self, session: Optional[Dict]) -> None:
+        if not session:
+            self.session_detail.clear()
+            self.notes_panel.set_text("")
+            self.notes_panel.set_editable(False)
+            self.transactions_table.clear_transactions()
+            self.flexi_table.clear_records()
+            self.current_session = None
+            self.current_session_id = None
+            self._update_action_states(None)
+            return
+
+        self.session_detail.update_session(session)
+        self.current_session_id = session["id"]
+        self.notes_panel.set_text(session.get("notes", ""))
+
+        record = self._fetch_session(session["id"])
+        self.current_session = record
+
+        self._load_transactions()
+        self._load_flexi_records()
+        self._update_action_states(session.get("status"))
+
+    def open_cash_session(self) -> None:
+        if self.active_session is not None:
+            QMessageBox.warning(self, "جلسة مفتوحة", "يوجد بالفعل جلسة قيد التنفيذ. يرجى إغلاقها أولاً.")
+            return
+
+        dialog = OpenSessionDialog(self)
+        if dialog.exec() != int(QDialog.DialogCode.Accepted):
+            return
+        payload = dialog.data() or {}
+        try:
+            start_balance = float(payload.get("start_balance", 0.0))
+            start_flexi = float(payload.get("start_flexi", 0.0))
+        except (TypeError, ValueError):
+            QMessageBox.warning(self, "بيانات غير صالحة", "تعذر قراءة قيم الرصيد المدخلة.")
+            return
+
+        new_session = CashSession(
+            user_id=self.user.id,
+            start_balance=start_balance,
+            start_flexi=start_flexi,
+            status="open",
+            start_time=datetime.datetime.now(datetime.timezone.utc),
         )
+        try:
+            self.db.add(new_session)
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            QMessageBox.critical(self, "خطأ", "حدث خطأ أثناء فتح الجلسة. حاول مرة أخرى.")
+            return
+
+        QMessageBox.information(self, "نجاح", "تم فتح الجلسة بنجاح.")
+        self.db.expire_all()
+        self.current_session_id = new_session.id
+        self.refresh_dashboard()
+
+    def add_expense(self) -> None:
+        session = self.current_session if self.current_session and self.current_session.status == "open" else self.active_session
+        if not session or session.status != "open":
+            QMessageBox.warning(self, "لا توجد جلسة", "افتح جلسة قبل تسجيل المصاريف.")
+            return
+
+        dialog = ExpenseDialog(self)
+        if dialog.exec() != int(QDialog.DialogCode.Accepted):
+            return
+        payload = dialog.data() or {}
+        amount = payload.get("amount")
+        if amount is None:
+            QMessageBox.warning(self, "بيانات غير صالحة", "يرجى إدخال مبلغ صحيح.")
+            return
+        transaction = Transaction(
+            session_id=session.id,
+            type="expense",
+            amount=float(amount),
+            description=str(payload.get("description", "")),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+        )
+        try:
+            self.db.add(transaction)
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            QMessageBox.critical(self, "خطأ", "تعذر حفظ المصروف. حاول مجدداً.")
+            return
+
+        QMessageBox.information(self, "تم", "تم تسجيل المصروف بنجاح.")
+        self.db.expire_all()
+        self.current_session_id = session.id
+        self.refresh_dashboard()
+
+    def add_flexi(self) -> None:
+        session = self.current_session if self.current_session and self.current_session.status == "open" else self.active_session
+        if not session or session.status != "open":
+            QMessageBox.warning(self, "لا توجد جلسة", "افتح جلسة قبل إضافة الفليكسي.")
+            return
+
+        dialog = FlexiDialog(self)
+        if dialog.exec() != int(QDialog.DialogCode.Accepted):
+            return
+        payload = dialog.data() or {}
+        amount = payload.get("amount")
+        if amount is None:
+            QMessageBox.warning(self, "بيانات غير صالحة", "يرجى إدخال مبلغ صحيح.")
+            return
+        record = FlexiTransaction(
+            session_id=session.id,
+            user_id=self.user.id,
+            amount=float(amount),
+            description=str(payload.get("description", "")),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+            is_paid=bool(payload.get("is_paid", False)),
+        )
+        try:
+            self.db.add(record)
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            QMessageBox.critical(self, "خطأ", "تعذر تسجيل عملية الفليكسي.")
+            return
+
+        QMessageBox.information(self, "تم", "تمت إضافة عملية الفليكسي.")
+        self.db.expire_all()
+        self.current_session_id = session.id
+        self.refresh_dashboard()
+
+    def close_cash_session(self) -> None:
+        session = self.current_session if self.current_session and self.current_session.status == "open" else self.active_session
+        if not session or session.status != "open":
+            QMessageBox.warning(self, "لا توجد جلسة", "لا توجد جلسة مفتوحة لإغلاقها.")
+            return
+
+        summary = {
+            "start_balance": session.start_balance or 0.0,
+            "total_expense": session.total_expense if hasattr(session, "total_expense") else 0.0,
+            "flexi_added": session.total_flexi_additions if hasattr(session, "total_flexi_additions") else 0.0,
+        }
+        dialog = CloseSessionDialog(summary, self)
+        if dialog.exec() != int(QDialog.DialogCode.Accepted):
+            return
+        payload = dialog.data() or {}
+        end_balance = payload.get("end_balance")
+        end_flexi = payload.get("end_flexi")
+        if end_balance is None or end_flexi is None:
+            QMessageBox.warning(self, "بيانات غير صالحة", "يرجى إدخال أرصدة الإغلاق بشكل صحيح.")
+            return
+
+        session.end_balance = float(end_balance)
+        session.end_flexi = float(end_flexi)
+        session.status = "closed"
+        session.end_time = datetime.datetime.now(datetime.timezone.utc)
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            QMessageBox.critical(self, "خطأ", "تعذر إغلاق الجلسة. حاول مرة أخرى.")
+            return
+
+        QMessageBox.information(self, "تم", "تم إغلاق الجلسة بنجاح.")
+        self.db.expire_all()
+        self.current_session_id = session.id
+        self.refresh_dashboard()
+
+    def save_session_notes(self) -> None:
+        if not self.current_session or self.current_session.status != "open":
+            QMessageBox.warning(self, "تعذر الحفظ", "يمكن تعديل الملاحظات للجلسات المفتوحة فقط.")
+            return
+
+        self.current_session.notes = self.notes_panel.text()
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            QMessageBox.critical(self, "خطأ", "تعذر حفظ الملاحظات. حاول مرة أخرى.")
+            return
+
+        QMessageBox.information(self, "تم", "تم حفظ الملاحظات بنجاح.")
+        self.db.expire_all()
+        self.refresh_dashboard()
+
+    def _open_transaction_menu(self, position) -> None:
+        if not self.current_session or self.current_session.status != "open":
+            return
+        row = self.transactions_table.rowAt(position.y())
+        if row < 0:
+            return
+        transaction = self.transactions_table.transaction_at(row)
+        if transaction is None:
+            return
+
+        menu = QMenu(self)
+        edit_action = menu.addAction("تعديل المصروف")
+        delete_action = menu.addAction("حذف المصروف")
+        action = menu.exec(self.transactions_table.mapToGlobal(position))
+        if action == edit_action:
+            self._edit_transaction(transaction)
+        elif action == delete_action:
+            self._delete_transaction(transaction)
+
+    def _edit_transaction(self, transaction: Transaction) -> None:
+        dialog = ExpenseDialog(
+            self,
+            description=transaction.description or "",
+            amount=transaction.amount,
+        )
+        if dialog.exec() != int(QDialog.DialogCode.Accepted):
+            return
+        payload = dialog.data() or {}
+        amount = payload.get("amount")
+        if amount is None:
+            return
+        transaction.amount = float(amount)
+        transaction.description = str(payload.get("description", ""))
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            QMessageBox.critical(self, "خطأ", "تعذر تحديث المصروف.")
+            return
+
+        self.db.expire_all()
+        self.refresh_dashboard()
+
+    def _delete_transaction(self, transaction: Transaction) -> None:
+        confirmation = QMessageBox.question(
+            self,
+            "تأكيد الحذف",
+            "هل أنت متأكد من حذف المصروف المحدد؟",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirmation != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.db.delete(transaction)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            QMessageBox.critical(self, "خطأ", "تعذر حذف المصروف.")
+            return
+
+        self.db.expire_all()
+        self.refresh_dashboard()
+
+    def _open_flexi_menu(self, position) -> None:
+        if not self.current_session or self.current_session.status != "open":
+            return
+        row = self.flexi_table.rowAt(position.y())
+        if row < 0:
+            return
+        record = self.flexi_table.record_at(row)
+        if record is None:
+            return
+
+        menu = QMenu(self)
+        edit_action = menu.addAction("تعديل العملية")
+        toggle_action = menu.addAction("تبديل حالة الدفع")
+        delete_action = menu.addAction("حذف العملية")
+        action = menu.exec(self.flexi_table.mapToGlobal(position))
+        if action == edit_action:
+            self._edit_flexi_record(record)
+        elif action == toggle_action:
+            self._toggle_flexi_status(record)
+        elif action == delete_action:
+            self._delete_flexi_record(record)
+
+    def _edit_flexi_record(self, record: FlexiTransaction) -> None:
+        dialog = FlexiDialog(
+            self,
+            description=record.description or "",
+            amount=record.amount,
+            is_paid=bool(record.is_paid),
+        )
+        if dialog.exec() != int(QDialog.DialogCode.Accepted):
+            return
+        payload = dialog.data() or {}
+        amount = payload.get("amount")
+        if amount is None:
+            return
+        record.amount = float(amount)
+        record.description = str(payload.get("description", ""))
+        record.is_paid = bool(payload.get("is_paid", False))
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            QMessageBox.critical(self, "خطأ", "تعذر تحديث عملية الفليكسي.")
+            return
+
+        self.db.expire_all()
+        self.refresh_dashboard()
+
+    def _delete_flexi_record(self, record: FlexiTransaction) -> None:
+        confirmation = QMessageBox.question(
+            self,
+            "تأكيد الحذف",
+            "هل ترغب بحذف عملية الفليكسي؟",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirmation != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.db.delete(record)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            QMessageBox.critical(self, "خطأ", "تعذر حذف العملية.")
+            return
+
+        self.db.expire_all()
+        self.refresh_dashboard()
+
+    def _toggle_flexi_status(self, record: FlexiTransaction) -> None:
+        record.is_paid = not bool(record.is_paid)
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            QMessageBox.critical(self, "خطأ", "تعذر تحديث حالة الدفع.")
+            record.is_paid = not record.is_paid
+            return
+
+        status_text = "تم وضع الحالة على مدفوع" if record.is_paid else "تم وضع الحالة على قيد التحصيل"
+        QMessageBox.information(self, "تم", status_text)
+        self.db.expire_all()
+        self.refresh_dashboard()
 
     # ------------------------------------------------------------------
     # Responsiveness
     # ------------------------------------------------------------------
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        try:
+            self.db.close()
+        except Exception:
+            pass
+        super().closeEvent(event)
 
     def resizeEvent(self, event) -> None:  # type: ignore[override]
         super().resizeEvent(event)
