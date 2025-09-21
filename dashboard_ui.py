@@ -1,7 +1,8 @@
 import sys
 import datetime
+import importlib
 from datetime import timezone
-from typing import Optional
+from typing import Optional, TYPE_CHECKING, Any
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QPushButton, QTableWidget, QTableWidgetItem, QDialog,
                              QLineEdit, QDialogButtonBox, QListWidget,
@@ -12,19 +13,29 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
 from PyQt6.QtGui import QColor, QDoubleValidator, QMouseEvent, QFont, QAction, QPainter
 from PyQt6.QtCore import Qt, QSize, QPoint, QEvent, QTimer, QDateTime, pyqtSignal
 
+if TYPE_CHECKING:  # pragma: no cover - typing helper
+    from PyQt6.QtCharts import QChart as ChartBase
+else:  # pragma: no cover - runtime fallback type
+    ChartBase = Any
+
+QTCHARTS_AVAILABLE = False
+QChart = QChartView = QLineSeries = QPieSeries = QDateTimeAxis = QValueAxis = None
+
 try:
-    from PyQt6.QtCharts import (
-        QChart,
-        QChartView,
-        QLineSeries,
-        QPieSeries,
-        QDateTimeAxis,
-        QValueAxis,
-    )
-    QTCHARTS_AVAILABLE = True
+    qtcharts = importlib.import_module("PyQt6.QtCharts")
 except Exception:  # pragma: no cover - optional dependency
-    QChart = QChartView = QLineSeries = QPieSeries = QDateTimeAxis = QValueAxis = None  # type: ignore
-    QTCHARTS_AVAILABLE = False
+    qtcharts = None
+else:  # pragma: no cover - optional dependency
+    QChart = getattr(qtcharts, "QChart", None)
+    QChartView = getattr(qtcharts, "QChartView", None)
+    QLineSeries = getattr(qtcharts, "QLineSeries", None)
+    QPieSeries = getattr(qtcharts, "QPieSeries", None)
+    QDateTimeAxis = getattr(qtcharts, "QDateTimeAxis", None)
+    QValueAxis = getattr(qtcharts, "QValueAxis", None)
+    QTCHARTS_AVAILABLE = all(
+        component is not None
+        for component in (QChart, QChartView, QLineSeries, QPieSeries, QDateTimeAxis, QValueAxis)
+    )
 
 from ui_helpers import FlowLayout
 
@@ -1707,7 +1718,7 @@ class UserDashboard(QMainWindow):
 
         return placeholder
 
-    def _apply_chart_palette(self, chart: Optional[QChart]):
+    def _apply_chart_palette(self, chart: Optional["ChartBase"]):
         if not QTCHARTS_AVAILABLE or chart is None:
             return
         title_color = QColor("#f8fafc") if self.dark_mode else QColor("#0f172a")
@@ -1740,28 +1751,54 @@ class UserDashboard(QMainWindow):
             "surface": "#ffffff",
             "surface_alt": "#f1f5f9",
             "muted_surface": "rgba(148, 163, 184, 0.16)",
+            "muted_surface_hover": "rgba(148, 163, 184, 0.26)",
+            "muted_surface_pressed": "rgba(148, 163, 184, 0.38)",
             "border": "rgba(148, 163, 184, 0.35)",
             "accent": "#2563eb",
+            "accent_hover": "#1d4ed8",
+            "accent_pressed": "#1e40af",
             "accent_border": "rgba(37, 99, 235, 0.45)",
             "accent_text": "#ffffff",
             "text_primary": "#0f172a",
             "text_muted": "#64748b",
             "success": "#16a34a",
+            "success_hover": "#22c55e",
+            "success_pressed": "#15803d",
             "danger": "#dc2626",
+            "danger_hover": "#ef4444",
+            "danger_pressed": "#b91c1c",
+            "secondary": "#0ea5e9",
+            "secondary_hover": "#0284c7",
+            "secondary_pressed": "#0369a1",
+            "disabled_surface": "rgba(148, 163, 184, 0.2)",
+            "disabled_text": "rgba(15, 23, 42, 0.45)",
         }
         palette_dark = {
             "window_bg": "#0f172a",
             "surface": "#1e293b",
             "surface_alt": "#111827",
             "muted_surface": "rgba(148, 163, 184, 0.12)",
+            "muted_surface_hover": "rgba(148, 163, 184, 0.22)",
+            "muted_surface_pressed": "rgba(148, 163, 184, 0.32)",
             "border": "rgba(148, 163, 184, 0.25)",
             "accent": "#38bdf8",
+            "accent_hover": "#0ea5e9",
+            "accent_pressed": "#0284c7",
             "accent_border": "rgba(14, 165, 233, 0.45)",
             "accent_text": "#0f172a",
             "text_primary": "#e2e8f0",
             "text_muted": "#94a3b8",
             "success": "#4ade80",
+            "success_hover": "#22c55e",
+            "success_pressed": "#16a34a",
             "danger": "#f87171",
+            "danger_hover": "#ef4444",
+            "danger_pressed": "#dc2626",
+            "secondary": "#0284c7",
+            "secondary_hover": "#0ea5e9",
+            "secondary_pressed": "#0369a1",
+            "disabled_surface": "rgba(148, 163, 184, 0.18)",
+            "disabled_text": "rgba(226, 232, 240, 0.4)",
         }
 
         palette = palette_dark if self.dark_mode else palette_light
@@ -1876,7 +1913,7 @@ class UserDashboard(QMainWindow):
                 color: {palette['accent_text']};
             }}
             QPushButton#SecondaryButton {{
-                background-color: #0ea5e9;
+                background-color: {palette['secondary']};
                 color: #ffffff;
             }}
             QPushButton#SuccessButton {{
@@ -1888,14 +1925,38 @@ class UserDashboard(QMainWindow):
                 color: #ffffff;
             }}
             QPushButton:hover {{
-                filter: brightness(1.05);
+                background-color: {palette['muted_surface_hover']};
             }}
             QPushButton:pressed {{
-                filter: brightness(0.95);
+                background-color: {palette['muted_surface_pressed']};
             }}
             QPushButton:disabled {{
-                background-color: rgba(148, 163, 184, 0.25);
-                color: rgba(15, 23, 42, 0.4);
+                background-color: {palette['disabled_surface']};
+                color: {palette['disabled_text']};
+            }}
+            QPushButton#PrimaryButton:hover {{
+                background-color: {palette['accent_hover']};
+            }}
+            QPushButton#PrimaryButton:pressed {{
+                background-color: {palette['accent_pressed']};
+            }}
+            QPushButton#SecondaryButton:hover {{
+                background-color: {palette['secondary_hover']};
+            }}
+            QPushButton#SecondaryButton:pressed {{
+                background-color: {palette['secondary_pressed']};
+            }}
+            QPushButton#SuccessButton:hover {{
+                background-color: {palette['success_hover']};
+            }}
+            QPushButton#SuccessButton:pressed {{
+                background-color: {palette['success_pressed']};
+            }}
+            QPushButton#DangerButton:hover {{
+                background-color: {palette['danger_hover']};
+            }}
+            QPushButton#DangerButton:pressed {{
+                background-color: {palette['danger_pressed']};
             }}
             QToolButton#ThemeToggle {{
                 padding: 12px 20px;
