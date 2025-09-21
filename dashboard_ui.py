@@ -469,6 +469,8 @@ class UserDashboard(ModernDashboardWindow):
             return
 
         self.revenue_chart.removeAllSeries()
+        for axis in list(self.revenue_chart.axes()):
+            self.revenue_chart.removeAxis(axis)
         income_series = QLineSeries()
         income_series.setName("الإيرادات")
         expense_series = QLineSeries()
@@ -493,10 +495,13 @@ class UserDashboard(ModernDashboardWindow):
         axis_y.setLabelFormat("%.0f")
         axis_y.setRange(0, max(max_value * 1.1, 10.0))
 
-        self.revenue_chart.setAxisX(axis_x, income_series)
-        self.revenue_chart.setAxisY(axis_y, income_series)
-        self.revenue_chart.setAxisX(axis_x, expense_series)
-        self.revenue_chart.setAxisY(axis_y, expense_series)
+        self.revenue_chart.addAxis(axis_x, Qt.AlignmentFlag.AlignBottom)
+        self.revenue_chart.addAxis(axis_y, Qt.AlignmentFlag.AlignLeft)
+
+        income_series.attachAxis(axis_x)
+        income_series.attachAxis(axis_y)
+        expense_series.attachAxis(axis_x)
+        expense_series.attachAxis(axis_y)
 
         self.trend_stack.setCurrentWidget(self.revenue_chart_view)
 
