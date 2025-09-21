@@ -470,11 +470,11 @@ class UserDashboard(ModernDashboardWindow):
         header.setObjectName("SectionTitle")
         layout.addWidget(header)
 
-        self.flexi_table = RecordTable(
+        self.flexi_records_table = RecordTable(
             ["الوصف", "المبلغ", "الحالة", "التاريخ"],
             numeric_columns=[1],
         )
-        layout.addWidget(self.flexi_table)
+        layout.addWidget(self.flexi_records_table)
         return page
     # ------------------------------------------------------------------
     # Data binding
@@ -574,7 +574,8 @@ class UserDashboard(ModernDashboardWindow):
                     format_datetime(record["timestamp"]),
                 ]
             )
-        self.flexi_table.set_records(rows)
+        if hasattr(self, "flexi_records_table"):
+            self.flexi_records_table.set_records(rows)
 
     def _update_trend_chart(self, trend: Dict[str, Sequence[float]]) -> None:
         if not CHARTS_AVAILABLE:
