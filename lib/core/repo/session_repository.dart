@@ -1,3 +1,5 @@
+import 'package:drift/drift.dart';
+
 import '../db/app_database.dart';
 import '../db/dao/session_dao.dart';
 import '../models/cash_session_model.dart';
@@ -5,8 +7,8 @@ import '../models/cash_transaction_model.dart';
 import '../models/flexi_transaction_model.dart';
 import '../models/session_status.dart';
 import '../models/session_summary.dart';
-import '../utils/session_calculator.dart';
 import '../models/transaction_type.dart';
+import '../utils/session_calculator.dart';
 
 class SessionRepository {
   SessionRepository(this._db) : _dao = SessionDao(_db);
@@ -118,18 +120,18 @@ class SessionRepository {
     DateTime? to,
   }) async {
     final buffer = StringBuffer('SELECT * FROM cash_sessions WHERE 1=1');
-    final variables = <Variable>[];
+    final variables = <Variable<Object?>>[];
     if (userId != null) {
       buffer.write(' AND user_id = ?');
-      variables.add(Variable<int>(userId));
+      variables.add(Variable<int>(userId) as Variable<Object?>);
     }
     if (from != null) {
       buffer.write(' AND start_time >= ?');
-      variables.add(Variable<String>(from.toIso8601String()));
+      variables.add(Variable<String>(from.toIso8601String()) as Variable<Object?>);
     }
     if (to != null) {
       buffer.write(' AND start_time <= ?');
-      variables.add(Variable<String>(to.toIso8601String()));
+      variables.add(Variable<String>(to.toIso8601String()) as Variable<Object?>);
     }
     buffer.write(' ORDER BY start_time DESC');
     final rows = await _db.customSelect(

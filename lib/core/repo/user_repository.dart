@@ -5,9 +5,8 @@ import '../models/user_role.dart';
 import '../utils/hash_utils.dart';
 
 class UserRepository {
-  UserRepository(this._db) : _userDao = UserDao(_db);
+  UserRepository(AppDatabase db) : _userDao = UserDao(db);
 
-  final AppDatabase _db;
   final UserDao _userDao;
 
   Stream<List<UserModel>> watchUsers() => _userDao.watchUsers();

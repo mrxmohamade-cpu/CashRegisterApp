@@ -204,7 +204,8 @@ class _MetricsGrid extends StatelessWidget {
 }
 
 class _MetricTile {
-  const _MetricTile(this.title, this.value, {this.isCount = false});
+  const _MetricTile(this.title, this.value, {bool isCountValue = false})
+      : isCount = isCountValue;
 
   final String title;
   final double value;
@@ -388,12 +389,18 @@ class _UserManagementSection extends ConsumerWidget {
         );
       },
     );
+    if (!context.mounted) {
+      return;
+    }
     if (result == true) {
       final authUser = ref.read(currentUserProvider);
       final isValid = await ref.read(userRepositoryProvider).confirmAdminPassword(
             authUser!.username,
             adminPasswordController.text,
           );
+      if (!context.mounted) {
+        return;
+      }
       if (!isValid) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('كلمة مرور المشرف غير صحيحة')),
@@ -401,8 +408,11 @@ class _UserManagementSection extends ConsumerWidget {
         return;
       }
       await ref.read(userRepositoryProvider).updateUser(user, newPassword: newPasswordController.text);
+      if (!context.mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تم تحديث كلمة مرور ${user.username}')), 
+        SnackBar(content: Text('تم تحديث كلمة مرور ${user.username}')),
       );
     }
   }
@@ -426,19 +436,28 @@ class _UserManagementSection extends ConsumerWidget {
         );
       },
     );
+    if (!context.mounted) {
+      return;
+    }
     if (confirmed == true) {
       final authUser = ref.read(currentUserProvider);
       final isValid = await ref.read(userRepositoryProvider).confirmAdminPassword(
             authUser!.username,
             adminPasswordController.text,
           );
+      if (!context.mounted) {
+        return;
+      }
       if (!isValid) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('كلمة مرور المشرف غير صحيحة')), 
+          const SnackBar(content: Text('كلمة مرور المشرف غير صحيحة')),
         );
         return;
       }
       await ref.read(userRepositoryProvider).deleteUser(user.id!);
+      if (!context.mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تم حذف ${user.username}')),
       );

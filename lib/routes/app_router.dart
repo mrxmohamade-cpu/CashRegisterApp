@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 
 import '../core/models/user_model.dart';
 import '../core/models/user_role.dart';
-import '../core/utils/app_providers.dart';
 import '../features/admin/view/admin_dashboard_screen.dart';
 import '../features/auth/providers/auth_controller.dart';
 import '../features/auth/view/login_screen.dart';

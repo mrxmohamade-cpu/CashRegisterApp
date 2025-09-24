@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/cash_session_model.dart';
 import '../../../core/models/cash_transaction_model.dart';
 import '../../../core/models/flexi_transaction_model.dart';
+import '../../../core/models/session_status.dart';
 import '../../../core/models/session_summary.dart';
 import '../../../core/models/user_model.dart';
 import '../../../core/utils/formatters.dart';
@@ -733,7 +734,7 @@ class _SessionHistoryList extends StatelessWidget {
                       ? 'قيد العمل'
                       : Formatters.formatCurrency((session.endBalance ?? 0) - session.startBalance);
                   return Card(
-                    color: isActive ? Colors.teal.withOpacity(0.1) : null,
+                    color: isActive ? Colors.teal.withValues(alpha: 0.1) : null,
                     child: ListTile(
                       title: Text(Formatters.formatDate(session.startTime)),
                       subtitle: Text(session.notes?.isEmpty ?? true ? 'بدون ملاحظات' : session.notes!),

@@ -46,24 +46,22 @@ class SessionDao {
     required double startBalance,
     required double startFlexi,
   }) async {
-    return _db.customInsert(
+    return _insertAndReturnId(
       'INSERT INTO cash_sessions(user_id, start_time, start_balance, status, start_flexi) VALUES(?, ?, ?, ?, ?)',
-      variables: [
-        Variable<int>(userId),
-        Variable<String>(DateTime.now().toIso8601String()),
-        Variable<double>(startBalance),
-        Variable<String>(SessionStatus.open.name),
-        Variable<double>(startFlexi),
+      [
+        userId,
+        DateTime.now().toIso8601String(),
+        startBalance,
+        SessionStatus.open.name,
+        startFlexi,
       ],
     );
   }
 
   Future<void> updateSessionNotes(int sessionId, String notes) async {
-    await _db.customUpdate(
+    await _db.customStatement(
       'UPDATE cash_sessions SET notes = ? WHERE id = ?',
-      variables: [Variable<String>(notes), Variable<int>(sessionId)],
-      updates: const {},
-      updateKind: UpdateKind.update,
+      [notes, sessionId],
     );
   }
 
@@ -72,17 +70,15 @@ class SessionDao {
     required double endBalance,
     required double endFlexi,
   }) async {
-    await _db.customUpdate(
+    await _db.customStatement(
       'UPDATE cash_sessions SET end_time = ?, end_balance = ?, end_flexi = ?, status = ? WHERE id = ?',
-      variables: [
-        Variable<String>(DateTime.now().toIso8601String()),
-        Variable<double>(endBalance),
-        Variable<double>(endFlexi),
-        Variable<String>(SessionStatus.closed.name),
-        Variable<int>(sessionId),
+      [
+        DateTime.now().toIso8601String(),
+        endBalance,
+        endFlexi,
+        SessionStatus.closed.name,
+        sessionId,
       ],
-      updates: const {},
-      updateKind: UpdateKind.update,
     );
   }
 
@@ -98,39 +94,39 @@ class SessionDao {
   }
 
   Future<int> insertTransaction(CashTransactionModel transaction) {
-    return _db.customInsert(
+    return _insertAndReturnId(
       'INSERT INTO transactions(session_id, type, amount, description, timestamp) VALUES(?, ?, ?, ?, ?)',
-      variables: [
-        Variable<int>(transaction.sessionId),
-        Variable<String>(transaction.type.name),
-        Variable<double>(transaction.amount),
-        Variable<String?>(transaction.description),
-        Variable<String>(transaction.timestamp.toIso8601String()),
+      [
+        transaction.sessionId,
+        transaction.type.name,
+        transaction.amount,
+        transaction.description,
+        transaction.timestamp.toIso8601String(),
       ],
     );
   }
 
   Future<void> updateTransaction(CashTransactionModel transaction) async {
-    await _db.customUpdate(
+    final id = transaction.id;
+    if (id == null) {
+      throw ArgumentError('Transaction must have an id before it can be updated.');
+    }
+    await _db.customStatement(
       'UPDATE transactions SET type = ?, amount = ?, description = ?, timestamp = ? WHERE id = ?',
-      variables: [
-        Variable<String>(transaction.type.name),
-        Variable<double>(transaction.amount),
-        Variable<String?>(transaction.description),
-        Variable<String>(transaction.timestamp.toIso8601String()),
-        Variable<int?>(transaction.id),
+      [
+        transaction.type.name,
+        transaction.amount,
+        transaction.description,
+        transaction.timestamp.toIso8601String(),
+        id,
       ],
-      updates: const {},
-      updateKind: UpdateKind.update,
     );
   }
 
   Future<void> deleteTransaction(int id) async {
-    await _db.customUpdate(
+    await _db.customStatement(
       'DELETE FROM transactions WHERE id = ?',
-      variables: [Variable<int>(id)],
-      updates: const {},
-      updateKind: UpdateKind.delete,
+      [id],
     );
   }
 
@@ -146,34 +142,30 @@ class SessionDao {
   }
 
   Future<int> insertFlexiTransaction(FlexiTransactionModel transaction) {
-    return _db.customInsert(
+    return _insertAndReturnId(
       'INSERT INTO flexi_transactions(session_id, user_id, amount, description, timestamp, is_paid) VALUES(?, ?, ?, ?, ?, ?)',
-      variables: [
-        Variable<int>(transaction.sessionId),
-        Variable<int>(transaction.userId),
-        Variable<double>(transaction.amount),
-        Variable<String?>(transaction.description),
-        Variable<String>(transaction.timestamp.toIso8601String()),
-        Variable<int>(transaction.isPaid ? 1 : 0),
+      [
+        transaction.sessionId,
+        transaction.userId,
+        transaction.amount,
+        transaction.description,
+        transaction.timestamp.toIso8601String(),
+        transaction.isPaid ? 1 : 0,
       ],
     );
   }
 
   Future<void> markFlexiPaid(int id, bool isPaid) async {
-    await _db.customUpdate(
+    await _db.customStatement(
       'UPDATE flexi_transactions SET is_paid = ? WHERE id = ?',
-      variables: [Variable<int>(isPaid ? 1 : 0), Variable<int>(id)],
-      updates: const {},
-      updateKind: UpdateKind.update,
+      [isPaid ? 1 : 0, id],
     );
   }
 
   Future<void> deleteFlexiTransaction(int id) async {
-    await _db.customUpdate(
+    await _db.customStatement(
       'DELETE FROM flexi_transactions WHERE id = ?',
-      variables: [Variable<int>(id)],
-      updates: const {},
-      updateKind: UpdateKind.delete,
+      [id],
     );
   }
 
@@ -202,6 +194,14 @@ class SessionDao {
       readsFrom: const {},
     ).getSingle();
     return (row.data['total'] as num).toDouble();
+  }
+
+  Future<int> _insertAndReturnId(String sql, List<Object?> args) async {
+    await _db.customStatement(sql, args);
+    final row = await _db
+        .customSelect('SELECT last_insert_rowid() AS id')
+        .getSingle();
+    return row.data['id'] as int;
   }
 
   CashSessionModel _mapSession(Map<String, Object?> data) {

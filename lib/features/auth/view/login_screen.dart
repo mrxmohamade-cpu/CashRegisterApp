@@ -92,7 +92,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           _usernameController.text.trim(),
           _passwordController.text,
         );
-    if (!success || !mounted) {
+    if (!success) {
+      return;
+    }
+    if (!context.mounted) {
       return;
     }
     final user = ref.read(currentUserProvider);

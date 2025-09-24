@@ -5,9 +5,8 @@ import '../models/user_role.dart';
 import '../utils/hash_utils.dart';
 
 class AuthRepository {
-  AuthRepository(this._db) : _userDao = UserDao(_db);
+  AuthRepository(AppDatabase db) : _userDao = UserDao(db);
 
-  final AppDatabase _db;
   final UserDao _userDao;
 
   Future<UserModel?> authenticate(String username, String password) async {

@@ -64,25 +64,25 @@ class UserDao {
   }
 
   Future<void> updateUser(UserModel user) async {
-    await _db.customUpdate(
+    final id = user.id;
+    if (id == null) {
+      throw ArgumentError('User must have an id before it can be updated.');
+    }
+    await _db.customStatement(
       'UPDATE users SET username = ?, hashed_password = ?, role = ? WHERE id = ?',
-      variables: [
-        Variable<String>(user.username),
-        Variable<String>(user.hashedPassword),
-        Variable<String>(user.role.name),
-        Variable<int?>(user.id),
+      [
+        user.username,
+        user.hashedPassword,
+        user.role.name,
+        id,
       ],
-      updates: const {},
-      updateKind: UpdateKind.update,
     );
   }
 
   Future<void> deleteUser(int id) async {
-    await _db.customUpdate(
+    await _db.customStatement(
       'DELETE FROM users WHERE id = ?',
-      variables: [Variable<int>(id)],
-      updates: const {},
-      updateKind: UpdateKind.delete,
+      [id],
     );
   }
 

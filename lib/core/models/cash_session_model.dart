@@ -16,7 +16,7 @@ class CashSessionModel with _$CashSessionModel {
     double? endBalance,
     @Default(SessionStatus.open) SessionStatus status,
     String? notes,
-    @JsonKey(defaultValue: 0.0) double startFlexi,
+    @Default(0.0) double startFlexi,
     double? endFlexi,
   }) = _CashSessionModel;
 

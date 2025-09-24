@@ -139,6 +139,3 @@ final showTimesProvider = Provider<bool>((ref) {
   return ref.watch(adminDashboardControllerProvider).showTimes;
 });
 
-extension on UserModel {
-  bool get isWorker => role == UserRole.user;
-}
