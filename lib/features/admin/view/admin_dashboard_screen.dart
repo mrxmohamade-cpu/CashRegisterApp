@@ -1,3 +1,5 @@
+import 'dart:ui' as ui show TextDirection;
+
 import 'package:data_table_2/data_table_2.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -128,7 +130,7 @@ class _FilterBar extends ConsumerWidget {
               lastDate: DateTime.now().add(const Duration(days: 365)),
               initialDateRange: state.range,
               builder: (context, child) => Directionality(
-                textDirection: TextDirection.rtl,
+                textDirection: ui.TextDirection.rtl,
                 child: child ?? const SizedBox.shrink(),
               ),
             );

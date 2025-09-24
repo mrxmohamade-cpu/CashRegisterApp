@@ -1,5 +1,3 @@
-import 'package:drift/drift.dart';
-
 import '../db/app_database.dart';
 import '../db/dao/session_dao.dart';
 import '../models/cash_session_model.dart';
