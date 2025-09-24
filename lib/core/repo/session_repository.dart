@@ -120,23 +120,18 @@ class SessionRepository {
     DateTime? to,
   }) async {
     final buffer = StringBuffer('SELECT * FROM cash_sessions WHERE 1=1');
-    final variables = <Variable<Object?>>[];
     if (userId != null) {
-      buffer.write(' AND user_id = ?');
-      variables.add(Variable<int>(userId) as Variable<Object?>);
+      buffer.write(' AND user_id = $userId');
     }
     if (from != null) {
-      buffer.write(' AND start_time >= ?');
-      variables.add(Variable<String>(from.toIso8601String()) as Variable<Object?>);
+      buffer.write(" AND start_time >= '${from.toIso8601String()}'");
     }
     if (to != null) {
-      buffer.write(' AND start_time <= ?');
-      variables.add(Variable<String>(to.toIso8601String()) as Variable<Object?>);
+      buffer.write(" AND start_time <= '${to.toIso8601String()}'");
     }
     buffer.write(' ORDER BY start_time DESC');
     final rows = await _db.customSelect(
       buffer.toString(),
-      variables: variables,
       readsFrom: const {},
     ).get();
     return rows.map((row) => _mapSession(row.data)).toList();

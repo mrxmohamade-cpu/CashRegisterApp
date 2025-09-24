@@ -4,9 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/admin_metrics.dart';
 import '../../../core/models/cash_session_model.dart';
 import '../../../core/models/user_model.dart';
-import '../../../core/models/user_role.dart';
-import '../../../core/repo/admin_repository.dart';
-import '../../../core/repo/user_repository.dart';
 import '../../../core/utils/app_providers.dart';
 
 enum AdminFilter {

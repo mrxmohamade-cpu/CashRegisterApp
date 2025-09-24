@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/cash_session_model.dart';
 import '../../../core/models/cash_transaction_model.dart';
-import '../../../core/models/flexi_transaction_model.dart';
 import '../../../core/models/session_status.dart';
 import '../../../core/models/session_summary.dart';
 import '../../../core/models/user_model.dart';

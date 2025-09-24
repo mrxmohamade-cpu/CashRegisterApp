@@ -26,7 +26,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ref.watch(authControllerProvider.notifier).stream,
     ),
     redirect: (context, state) {
-      final isLoggingIn = state.subloc == '/login';
+      final isLoggingIn = state.matchedLocation == '/login';
       final user = authState.user;
       if (user == null) {
         return isLoggingIn ? null : '/login';
