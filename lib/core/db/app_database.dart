@@ -1,23 +1,12 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../utils/hash_utils.dart';
-
-LazyDatabase _openConnection() {
-  return LazyDatabase(() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final dbPath = p.join(dir.path, 'cash_register.sqlite');
-    return NativeDatabase(File(dbPath));
-  });
-}
+import 'connection/app_database_connection.dart';
 
 class AppDatabase extends GeneratedDatabase {
-  AppDatabase() : super(_openConnection());
+  AppDatabase() : super(openConnection());
 
   static Future<AppDatabase> makeDefault() async {
     return AppDatabase();
