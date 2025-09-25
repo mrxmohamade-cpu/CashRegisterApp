@@ -44,10 +44,10 @@ class CashRegisterApp extends ConsumerWidget {
         fontFamily: 'Roboto',
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
-        cardTheme: CardThemeData(
+        cardTheme: CardTheme(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
-        dialogTheme: const DialogThemeData(
+        dialogTheme: const DialogTheme(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
         ),
       ),

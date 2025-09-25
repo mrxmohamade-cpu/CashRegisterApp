@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart';
 
 import '../../models/user_model.dart';
@@ -8,6 +10,7 @@ class UserDao {
   UserDao(this._db);
 
   final AppDatabase _db;
+  final _usersController = StreamController<List<UserModel>>.broadcast();
 
   Future<UserModel?> findByUsername(String username) async {
     final result = await _db.customSelect(
@@ -34,13 +37,8 @@ class UserDao {
   }
 
   Stream<List<UserModel>> watchUsers() {
-    return _db
-        .customSelect(
-          'SELECT * FROM users ORDER BY username ASC',
-          readsFrom: const {},
-        )
-        .watch()
-        .map((rows) => rows.map((row) => _mapUser(row.data)).toList());
+    _emitUsers();
+    return _usersController.stream;
   }
 
   Future<List<UserModel>> getUsers() async {
@@ -60,6 +58,7 @@ class UserDao {
         Variable<String>(user.role.name),
       ],
     );
+    await _emitUsers();
     return id;
   }
 
@@ -77,6 +76,7 @@ class UserDao {
         id,
       ],
     );
+    await _emitUsers();
   }
 
   Future<void> deleteUser(int id) async {
@@ -84,6 +84,7 @@ class UserDao {
       'DELETE FROM users WHERE id = ?',
       [id],
     );
+    await _emitUsers();
   }
 
   UserModel _mapUser(Map<String, Object?> data) {
@@ -93,5 +94,15 @@ class UserDao {
       hashedPassword: data['hashed_password'] as String,
       role: (data['role'] as String) == 'admin' ? UserRole.admin : UserRole.user,
     );
+  }
+
+  Future<void> _emitUsers() async {
+    final rows = await _db.customSelect(
+      'SELECT * FROM users ORDER BY username ASC',
+      readsFrom: const {},
+    ).get();
+    if (!_usersController.isClosed) {
+      _usersController.add(rows.map((row) => _mapUser(row.data)).toList());
+    }
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart';
 
 import '../../models/cash_session_model.dart';
@@ -12,6 +14,12 @@ class SessionDao {
 
   final AppDatabase _db;
 
+  final _sessionControllers = <int, StreamController<List<CashSessionModel>>>{};
+  final _transactionControllers =
+      <int, StreamController<List<CashTransactionModel>>>{};
+  final _flexiControllers =
+      <int, StreamController<List<FlexiTransactionModel>>>{};
+
   Future<CashSessionModel?> getOpenSessionForUser(int userId) async {
     final row = await _db.customSelect(
       'SELECT * FROM cash_sessions WHERE user_id = ? AND status = "open" ORDER BY id DESC LIMIT 1',
@@ -22,14 +30,14 @@ class SessionDao {
   }
 
   Stream<List<CashSessionModel>> watchSessionsForUser(int userId) {
-    return _db
-        .customSelect(
-          'SELECT * FROM cash_sessions WHERE user_id = ? ORDER BY start_time DESC',
-          variables: [Variable<int>(userId)],
-          readsFrom: const {},
-        )
-        .watch()
-        .map((rows) => rows.map((row) => _mapSession(row.data)).toList());
+    final controller = _sessionControllers.putIfAbsent(userId, () {
+      final controller = StreamController<List<CashSessionModel>>.broadcast(
+        onListen: () => _emitSessions(userId),
+      );
+      return controller;
+    });
+    _emitSessions(userId);
+    return controller.stream;
   }
 
   Future<List<CashSessionModel>> getSessionsForUser(int userId) async {
@@ -46,7 +54,7 @@ class SessionDao {
     required double startBalance,
     required double startFlexi,
   }) async {
-    return _insertAndReturnId(
+    final id = await _insertAndReturnId(
       'INSERT INTO cash_sessions(user_id, start_time, start_balance, status, start_flexi) VALUES(?, ?, ?, ?, ?)',
       [
         userId,
@@ -56,6 +64,8 @@ class SessionDao {
         startFlexi,
       ],
     );
+    await _emitSessions(userId);
+    return id;
   }
 
   Future<void> updateSessionNotes(int sessionId, String notes) async {
@@ -63,6 +73,7 @@ class SessionDao {
       'UPDATE cash_sessions SET notes = ? WHERE id = ?',
       [notes, sessionId],
     );
+    await _emitSessionById(sessionId);
   }
 
   Future<void> closeSession({
@@ -80,21 +91,22 @@ class SessionDao {
         sessionId,
       ],
     );
+    await _emitSessionById(sessionId);
   }
 
   Stream<List<CashTransactionModel>> watchTransactions(int sessionId) {
-    return _db
-        .customSelect(
-          'SELECT * FROM transactions WHERE session_id = ? ORDER BY timestamp DESC',
-          variables: [Variable<int>(sessionId)],
-          readsFrom: const {},
-        )
-        .watch()
-        .map((rows) => rows.map((row) => _mapTransaction(row.data)).toList());
+    final controller = _transactionControllers.putIfAbsent(sessionId, () {
+      final controller = StreamController<List<CashTransactionModel>>.broadcast(
+        onListen: () => _emitTransactions(sessionId),
+      );
+      return controller;
+    });
+    _emitTransactions(sessionId);
+    return controller.stream;
   }
 
-  Future<int> insertTransaction(CashTransactionModel transaction) {
-    return _insertAndReturnId(
+  Future<int> insertTransaction(CashTransactionModel transaction) async {
+    final id = await _insertAndReturnId(
       'INSERT INTO transactions(session_id, type, amount, description, timestamp) VALUES(?, ?, ?, ?, ?)',
       [
         transaction.sessionId,
@@ -104,6 +116,9 @@ class SessionDao {
         transaction.timestamp.toIso8601String(),
       ],
     );
+    await _emitTransactions(transaction.sessionId);
+    await _emitSessionById(transaction.sessionId);
+    return id;
   }
 
   Future<void> updateTransaction(CashTransactionModel transaction) async {
@@ -121,28 +136,35 @@ class SessionDao {
         id,
       ],
     );
+    await _emitTransactions(transaction.sessionId);
+    await _emitSessionById(transaction.sessionId);
   }
 
   Future<void> deleteTransaction(int id) async {
+    final sessionId = await _sessionIdForTransaction(id);
     await _db.customStatement(
       'DELETE FROM transactions WHERE id = ?',
       [id],
     );
+    if (sessionId != null) {
+      await _emitTransactions(sessionId);
+      await _emitSessionById(sessionId);
+    }
   }
 
   Stream<List<FlexiTransactionModel>> watchFlexiTransactions(int sessionId) {
-    return _db
-        .customSelect(
-          'SELECT * FROM flexi_transactions WHERE session_id = ? ORDER BY timestamp DESC',
-          variables: [Variable<int>(sessionId)],
-          readsFrom: const {},
-        )
-        .watch()
-        .map((rows) => rows.map((row) => _mapFlexi(row.data)).toList());
+    final controller = _flexiControllers.putIfAbsent(sessionId, () {
+      final controller = StreamController<List<FlexiTransactionModel>>.broadcast(
+        onListen: () => _emitFlexi(sessionId),
+      );
+      return controller;
+    });
+    _emitFlexi(sessionId);
+    return controller.stream;
   }
 
-  Future<int> insertFlexiTransaction(FlexiTransactionModel transaction) {
-    return _insertAndReturnId(
+  Future<int> insertFlexiTransaction(FlexiTransactionModel transaction) async {
+    final id = await _insertAndReturnId(
       'INSERT INTO flexi_transactions(session_id, user_id, amount, description, timestamp, is_paid) VALUES(?, ?, ?, ?, ?, ?)',
       [
         transaction.sessionId,
@@ -153,20 +175,33 @@ class SessionDao {
         transaction.isPaid ? 1 : 0,
       ],
     );
+    await _emitFlexi(transaction.sessionId);
+    await _emitSessionById(transaction.sessionId);
+    return id;
   }
 
   Future<void> markFlexiPaid(int id, bool isPaid) async {
+    final sessionId = await _sessionIdForFlexi(id);
     await _db.customStatement(
       'UPDATE flexi_transactions SET is_paid = ? WHERE id = ?',
       [isPaid ? 1 : 0, id],
     );
+    if (sessionId != null) {
+      await _emitFlexi(sessionId);
+      await _emitSessionById(sessionId);
+    }
   }
 
   Future<void> deleteFlexiTransaction(int id) async {
+    final sessionId = await _sessionIdForFlexi(id);
     await _db.customStatement(
       'DELETE FROM flexi_transactions WHERE id = ?',
       [id],
     );
+    if (sessionId != null) {
+      await _emitFlexi(sessionId);
+      await _emitSessionById(sessionId);
+    }
   }
 
   Future<double> sumExpenses(int sessionId) async {
@@ -194,6 +229,83 @@ class SessionDao {
       readsFrom: const {},
     ).getSingle();
     return (row.data['total'] as num).toDouble();
+  }
+
+  Future<void> _emitSessions(int userId) async {
+    final sessions = await getSessionsForUser(userId);
+    final controller = _sessionControllers[userId];
+    if (controller != null && !controller.isClosed) {
+      controller.add(sessions);
+    }
+  }
+
+  Future<void> _emitSessionById(int sessionId) async {
+    final userId = await _userIdForSession(sessionId);
+    if (userId != null) {
+      await _emitSessions(userId);
+    }
+  }
+
+  Future<void> _emitTransactions(int sessionId) async {
+    final controller = _transactionControllers[sessionId];
+    if (controller == null || controller.isClosed) {
+      return;
+    }
+    final rows = await _db.customSelect(
+      'SELECT * FROM transactions WHERE session_id = ? ORDER BY timestamp DESC',
+      variables: [Variable<int>(sessionId)],
+      readsFrom: const {},
+    ).get();
+    controller.add(rows.map((row) => _mapTransaction(row.data)).toList());
+  }
+
+  Future<void> _emitFlexi(int sessionId) async {
+    final controller = _flexiControllers[sessionId];
+    if (controller == null || controller.isClosed) {
+      return;
+    }
+    final rows = await _db.customSelect(
+      'SELECT * FROM flexi_transactions WHERE session_id = ? ORDER BY timestamp DESC',
+      variables: [Variable<int>(sessionId)],
+      readsFrom: const {},
+    ).get();
+    controller.add(rows.map((row) => _mapFlexi(row.data)).toList());
+  }
+
+  Future<int?> _sessionIdForTransaction(int id) async {
+    final row = await _db.customSelect(
+      'SELECT session_id FROM transactions WHERE id = ? LIMIT 1',
+      variables: [Variable<int>(id)],
+      readsFrom: const {},
+    ).getSingleOrNull();
+    if (row == null) {
+      return null;
+    }
+    return row.data['session_id'] as int;
+  }
+
+  Future<int?> _sessionIdForFlexi(int id) async {
+    final row = await _db.customSelect(
+      'SELECT session_id FROM flexi_transactions WHERE id = ? LIMIT 1',
+      variables: [Variable<int>(id)],
+      readsFrom: const {},
+    ).getSingleOrNull();
+    if (row == null) {
+      return null;
+    }
+    return row.data['session_id'] as int;
+  }
+
+  Future<int?> _userIdForSession(int sessionId) async {
+    final row = await _db.customSelect(
+      'SELECT user_id FROM cash_sessions WHERE id = ? LIMIT 1',
+      variables: [Variable<int>(sessionId)],
+      readsFrom: const {},
+    ).getSingleOrNull();
+    if (row == null) {
+      return null;
+    }
+    return row.data['user_id'] as int;
   }
 
   Future<int> _insertAndReturnId(String sql, List<Object?> args) async {
