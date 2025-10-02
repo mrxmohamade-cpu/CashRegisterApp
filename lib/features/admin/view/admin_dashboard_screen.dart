@@ -25,46 +25,176 @@ class AdminDashboardScreen extends ConsumerWidget {
     final usersAsync = ref.watch(adminUsersProvider);
     final showTimes = ref.watch(showTimesProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('لوحة المشرف'),
-        actions: [
-          TextButton.icon(
-            onPressed: () => ref.read(authControllerProvider.notifier).logout(),
-            icon: const Icon(Icons.logout),
-            label: const Text('خروج'),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 1000) {
+          return DefaultTabController(
+            length: 4,
+            child: Scaffold(
+              appBar: AppBar(
+                title: const Text('لوحة المشرف'),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.logout),
+                    onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+                    tooltip: 'تسجيل الخروج',
+                  ),
+                ],
+                bottom: const TabBar(
+                  isScrollable: true,
+                  tabs: [
+                    Tab(icon: Icon(Icons.dashboard_customize), text: 'نظرة عامة'),
+                    Tab(icon: Icon(Icons.table_chart), text: 'الجلسات'),
+                    Tab(icon: Icon(Icons.people_alt), text: 'العمال'),
+                    Tab(icon: Icon(Icons.settings), text: 'إعدادات'),
+                  ],
+                ),
+              ),
+              body: TabBarView(
+                children: [
+                  _buildOverviewTab(ref, state, metricsAsync),
+                  _buildSessionsTab(ref, sessionsAsync, showTimes),
+                  _buildWorkersTab(ref, usersAsync),
+                  _buildSettingsTab(ref, showTimes),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('لوحة المشرف'),
+            actions: [
+              TextButton.icon(
+                onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+                icon: const Icon(Icons.logout),
+                label: const Text('خروج'),
+              ),
+            ],
+          ),
+          body: _buildDesktopBody(ref, state, metricsAsync, usersAsync, sessionsAsync, showTimes),
+        );
+      },
+    );
+  }
+
+  Widget _buildDesktopBody(
+    WidgetRef ref,
+    AdminDashboardState state,
+    AsyncValue<AdminDashboardMetrics> metricsAsync,
+    AsyncValue<List<UserModel>> usersAsync,
+    AsyncValue<List<CashSessionModel>> sessionsAsync,
+    bool showTimes,
+  ) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _FilterBar(state: state),
+          const SizedBox(height: 16),
+          metricsAsync.when(
+            data: (metrics) => _MetricsGrid(metrics: metrics),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => Text('تعذر تحميل الإحصائيات: $error'),
+          ),
+          const SizedBox(height: 16),
+          _UserManagementSection(usersAsync: usersAsync),
+          const SizedBox(height: 16),
+          _SessionsReportSection(sessionsAsync: sessionsAsync, showTimes: showTimes),
+          const SizedBox(height: 16),
+          _WorkerProfileSection(usersAsync: usersAsync),
+          const SizedBox(height: 16),
+          Card(
+            child: SwitchListTile(
+              title: const Text('عرض أوقات الفتح والغلق في التقرير'),
+              value: showTimes,
+              onChanged: (value) => ref.read(adminDashboardControllerProvider.notifier).toggleShowTimes(value),
+            ),
           ),
         ],
       ),
-      body: SingleChildScrollView(
+    );
+  }
+
+  Widget _buildOverviewTab(
+    WidgetRef ref,
+    AdminDashboardState state,
+    AsyncValue<AdminDashboardMetrics> metricsAsync,
+  ) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.invalidate(adminMetricsProvider);
+        ref.invalidate(adminSessionsProvider);
+        await ref.read(adminMetricsProvider.future);
+      },
+      child: ListView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _FilterBar(state: state),
-            const SizedBox(height: 16),
-            metricsAsync.when(
-              data: (metrics) => _MetricsGrid(metrics: metrics),
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Text('تعذر تحميل الإحصائيات: $error'),
-            ),
-            const SizedBox(height: 16),
-            _UserManagementSection(usersAsync: usersAsync),
-            const SizedBox(height: 16),
-            _SessionsReportSection(sessionsAsync: sessionsAsync, showTimes: showTimes),
-            const SizedBox(height: 16),
-            _WorkerProfileSection(usersAsync: usersAsync),
-            const SizedBox(height: 16),
-            Card(
-              child: SwitchListTile(
-                title: const Text('عرض أوقات الفتح والغلق في التقرير'),
-                value: showTimes,
-                onChanged: (value) => ref.read(adminDashboardControllerProvider.notifier).toggleShowTimes(value),
-              ),
-            ),
-          ],
-        ),
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          _FilterBar(state: state),
+          const SizedBox(height: 16),
+          metricsAsync.when(
+            data: (metrics) => _MetricsGrid(metrics: metrics),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => Text('تعذر تحميل الإحصائيات: $error'),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildSessionsTab(
+    WidgetRef ref,
+    AsyncValue<List<CashSessionModel>> sessionsAsync,
+    bool showTimes,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _SessionsReportSection(sessionsAsync: sessionsAsync, showTimes: showTimes),
+      ],
+    );
+  }
+
+  Widget _buildWorkersTab(
+    WidgetRef ref,
+    AsyncValue<List<UserModel>> usersAsync,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _UserManagementSection(usersAsync: usersAsync),
+        const SizedBox(height: 16),
+        _WorkerProfileSection(usersAsync: usersAsync),
+      ],
+    );
+  }
+
+  Widget _buildSettingsTab(
+    WidgetRef ref,
+    bool showTimes,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: SwitchListTile(
+            title: const Text('عرض أوقات الفتح والغلق في التقرير'),
+            value: showTimes,
+            onChanged: (value) => ref.read(adminDashboardControllerProvider.notifier).toggleShowTimes(value),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('حول لوحة التحكم'),
+            subtitle: const Text('واجهة متجاوبة محسّنة للهواتف لإدارة الصندوق بسهولة.'),
+          ),
+        ),
+      ],
     );
   }
 }
