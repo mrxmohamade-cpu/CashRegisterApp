@@ -552,7 +552,8 @@ class _UserManagementSectionState extends ConsumerState<_UserManagementSection> 
       SizedBox(
         width: isWide ? 200 : double.infinity,
         child: DropdownButtonFormField<UserRole>(
-          value: _role,
+          key: ValueKey(_role),
+          initialValue: _role,
           decoration: const InputDecoration(labelText: 'الدور'),
           items: UserRole.values
               .map(
@@ -591,7 +592,7 @@ class _UserManagementSectionState extends ConsumerState<_UserManagementSection> 
           password: _passwordController.text,
           role: _role,
         );
-    if (!mounted) {
+    if (!context.mounted) {
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
@@ -638,7 +639,7 @@ class _UserManagementSectionState extends ConsumerState<_UserManagementSection> 
         );
       },
     );
-    if (!mounted) {
+    if (!context.mounted) {
       return;
     }
     if (result == true) {
@@ -647,7 +648,7 @@ class _UserManagementSectionState extends ConsumerState<_UserManagementSection> 
             authUser!.username,
             adminPasswordController.text,
           );
-      if (!mounted) {
+      if (!context.mounted) {
         return;
       }
       if (!isValid) {
@@ -657,7 +658,7 @@ class _UserManagementSectionState extends ConsumerState<_UserManagementSection> 
         return;
       }
       await ref.read(userRepositoryProvider).updateUser(user, newPassword: newPasswordController.text);
-      if (!mounted) {
+      if (!context.mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
@@ -685,7 +686,7 @@ class _UserManagementSectionState extends ConsumerState<_UserManagementSection> 
         );
       },
     );
-    if (!mounted) {
+    if (!context.mounted) {
       return;
     }
     if (confirmed == true) {
@@ -694,7 +695,7 @@ class _UserManagementSectionState extends ConsumerState<_UserManagementSection> 
             authUser!.username,
             adminPasswordController.text,
           );
-      if (!mounted) {
+      if (!context.mounted) {
         return;
       }
       if (!isValid) {
@@ -704,7 +705,7 @@ class _UserManagementSectionState extends ConsumerState<_UserManagementSection> 
         return;
       }
       await ref.read(userRepositoryProvider).deleteUser(user.id!);
-      if (!mounted) {
+      if (!context.mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1041,7 +1042,7 @@ class _SummaryChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: resolvedColor.withOpacity(0.08),
+        color: resolvedColor.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
@@ -1090,7 +1091,7 @@ class _StatusChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Text(
@@ -1122,8 +1123,9 @@ class _WorkerProfileSection extends ConsumerWidget {
           data: (users) {
             final workers = users.where((user) => user.role == UserRole.user).toList();
             return DropdownButtonFormField<int?>(
+              key: ValueKey(state.selectedUserId),
               decoration: const InputDecoration(labelText: 'اختر العامل'),
-              value: state.selectedUserId,
+              initialValue: state.selectedUserId,
               items: [
                 const DropdownMenuItem(value: null, child: Text('الكل')),
                 ...workers.map(

@@ -1,5 +1,6 @@
 import 'package:data_table_2/data_table_2.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart' show WidgetState, WidgetStateProperty;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/cash_session_model.dart';
@@ -988,13 +989,13 @@ class _MobileFlexiList extends ConsumerWidget {
                             Switch(
                               value: tx.isPaid,
                               onChanged: (value) => controller.markFlexiPaid(tx.id!, value),
-                              thumbColor: MaterialStateProperty.resolveWith(
+                              thumbColor: WidgetStateProperty.resolveWith(
                                 (states) =>
-                                    states.contains(MaterialState.selected) ? Colors.teal : null,
+                                    states.contains(WidgetState.selected) ? Colors.teal : null,
                               ),
-                              trackColor: MaterialStateProperty.resolveWith(
-                                (states) => states.contains(MaterialState.selected)
-                                    ? Colors.teal.withOpacity(0.4)
+                              trackColor: WidgetStateProperty.resolveWith(
+                                (states) => states.contains(WidgetState.selected)
+                                    ? Colors.teal.withValues(alpha: 0.4)
                                     : null,
                               ),
                             ),
