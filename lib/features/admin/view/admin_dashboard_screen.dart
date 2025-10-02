@@ -108,7 +108,7 @@ class AdminDashboardScreen extends ConsumerWidget {
           _WorkerProfileSection(usersAsync: usersAsync),
           const SizedBox(height: 16),
           Card(
-            child: SwitchListTile(
+            child: SwitchListTile.adaptive(
               title: const Text('عرض أوقات الفتح والغلق في التقرير'),
               value: showTimes,
               onChanged: (value) => ref
@@ -183,7 +183,7 @@ class AdminDashboardScreen extends ConsumerWidget {
       padding: const EdgeInsets.all(16),
       children: [
         Card(
-          child: SwitchListTile(
+          child: SwitchListTile.adaptive(
             title: const Text('عرض أوقات الفتح والغلق في التقرير'),
             value: showTimes,
             onChanged: (value) => ref.read(adminDashboardControllerProvider.notifier).toggleShowTimes(value),
@@ -198,6 +198,178 @@ class AdminDashboardScreen extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SessionReportTile extends StatelessWidget {
+  const _SessionReportTile({
+    required this.session,
+    required this.user,
+    required this.showTimes,
+    this.onDetails,
+  });
+
+  final CashSessionModel session;
+  final UserModel? user;
+  final bool showTimes;
+  final VoidCallback? onDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    final endBalance = session.endBalance ?? session.startBalance;
+    final cashDifference = endBalance - session.startBalance;
+    final endFlexi = session.endFlexi ?? session.startFlexi;
+    final flexiMovement = endFlexi - session.startFlexi;
+    final userName = user?.username ?? 'مستخدم #${session.userId}';
+
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        userName,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      if (showTimes) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'الفتح: ${Formatters.formatDate(session.startTime)}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        Text(
+                          'الإغلاق: ${session.endTime == null ? '---' : Formatters.formatDate(session.endTime!)}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                _StatusChip(status: session.status),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _InfoBadge(
+                  icon: Icons.account_balance_wallet_outlined,
+                  label: 'رصيد البداية',
+                  value: Formatters.formatCurrency(session.startBalance),
+                ),
+                _InfoBadge(
+                  icon: Icons.savings_outlined,
+                  label: 'رصيد النهاية',
+                  value: Formatters.formatCurrency(endBalance),
+                ),
+                _InfoBadge(
+                  icon: Icons.trending_up,
+                  label: 'الفرق النقدي',
+                  value: Formatters.formatCurrency(cashDifference),
+                ),
+                _InfoBadge(
+                  icon: Icons.swap_horiz,
+                  label: 'الفليكسي',
+                  value:
+                      '${Formatters.formatCurrency(session.startFlexi)} → ${Formatters.formatCurrency(endFlexi)} (${Formatters.formatCurrency(flexiMovement)})',
+                  maxLines: 2,
+                ),
+              ],
+            ),
+            if (session.notes?.isNotEmpty == true) ...[
+              const SizedBox(height: 12),
+              Text(
+                'ملاحظات: ${session.notes!}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+            if (onDetails != null) ...[
+              const SizedBox(height: 12),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton.icon(
+                  onPressed: onDetails,
+                  icon: const Icon(Icons.info_outline),
+                  label: const Text('عرض التفاصيل'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoBadge extends StatelessWidget {
+  const _InfoBadge({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.maxLines = 1,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 120, maxWidth: 220),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 18, color: theme.colorScheme.primary),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: theme.textTheme.labelMedium
+                          ?.copyWith(color: theme.colorScheme.primary),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                value,
+                maxLines: maxLines,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -289,6 +461,59 @@ class _FilterBar extends ConsumerWidget {
       case AdminFilter.last30Days:
         return 'آخر 30 يومًا';
     }
+  }
+}
+
+class _AdminSectionCard extends StatelessWidget {
+  const _AdminSectionCard({
+    this.title,
+    this.actions,
+    required this.child,
+    this.padding,
+  });
+
+  final String? title;
+  final List<Widget>? actions;
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final headerActions = actions?.whereType<Widget>().toList() ?? const [];
+    final hasHeader = title != null || headerActions.isNotEmpty;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: padding ?? const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (hasHeader) ...[
+              Row(
+                children: [
+                  if (title != null)
+                    Expanded(
+                      child: Text(
+                        title!,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    )
+                  else
+                    const Spacer(),
+                  ...headerActions,
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+            child,
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -410,120 +635,119 @@ class _UserManagementSectionState extends ConsumerState<_UserManagementSection> 
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isWide = constraints.maxWidth > 720;
-        final formFields = _buildFormFields(isWide);
+        final isCompact = constraints.maxWidth < 720;
+        final formFields = _buildFormFields(!isCompact);
 
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'إدارة العمال',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    IconButton(
-                      tooltip: 'تحديث القائمة',
-                      onPressed: () => ref.invalidate(adminUsersProvider),
-                      icon: const Icon(Icons.refresh),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                widget.usersAsync.when(
-                  data: (users) {
-                    return Column(
+        return _AdminSectionCard(
+          title: 'إدارة العمال',
+          actions: [
+            IconButton(
+              tooltip: 'تحديث القائمة',
+              onPressed: () => ref.invalidate(adminUsersProvider),
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+          child: widget.usersAsync.when(
+            data: (users) {
+              final formChild = isCompact
+                  ? Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Form(
-                          key: _formKey,
-                          child: isWide
-                              ? Wrap(
-                                  spacing: 12,
-                                  runSpacing: 12,
-                                  children: formFields,
-                                )
-                              : Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: formFields
-                                      .map(
-                                        (child) => Padding(
-                                          padding: const EdgeInsets.only(bottom: 12),
-                                          child: child,
-                                        ),
-                                      )
-                                      .toList(),
-                                ),
-                        ),
-                        const SizedBox(height: 16),
-                        if (users.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 24),
-                            child: Text(
-                              'لم يتم إضافة أي عامل بعد.',
-                              textAlign: TextAlign.center,
+                      children: formFields
+                          .map(
+                            (child) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: child,
                             ),
                           )
-                        else
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: DataTable2(
-                              columnSpacing: 16,
-                              horizontalMargin: 16,
-                              minWidth: 720,
-                              dataRowHeight: 56,
-                              columns: const [
-                                DataColumn(label: Text('المعرف')),
-                                DataColumn(label: Text('الاسم')),
-                                DataColumn(label: Text('الدور')),
-                                DataColumn(label: Text('إجراءات')),
-                              ],
-                              rows: users
-                                  .map(
-                                    (user) => DataRow(
-                                      cells: [
-                                        DataCell(Text('${user.id ?? '-'}')),
-                                        DataCell(Text(user.username)),
-                                        DataCell(Text(user.role.displayName)),
-                                        DataCell(
-                                          Wrap(
-                                            spacing: 8,
-                                            runSpacing: 8,
-                                            children: [
-                                              OutlinedButton.icon(
-                                                onPressed: () => _editUser(context, user),
-                                                icon: const Icon(Icons.edit),
-                                                label: const Text('تعديل كلمة المرور'),
-                                              ),
-                                              TextButton.icon(
-                                                onPressed: () => _deleteUser(context, user),
-                                                icon: const Icon(Icons.delete_outline),
-                                                label: const Text('حذف'),
-                                              ),
-                                            ],
-                                          ),
+                          .toList(),
+                    )
+                  : Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: formFields,
+                    );
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Form(
+                    key: _formKey,
+                    child: formChild,
+                  ),
+                  const SizedBox(height: 16),
+                  if (users.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Text(
+                        'لم يتم إضافة أي عامل بعد.',
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                  else if (isCompact)
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemBuilder: (context, index) {
+                        final user = users[index];
+                        return _WorkerListTile(
+                          user: user,
+                          onEdit: () => _editUser(context, user),
+                          onDelete: () => _deleteUser(context, user),
+                        );
+                      },
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemCount: users.length,
+                    )
+                  else
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable2(
+                        columnSpacing: 16,
+                        horizontalMargin: 16,
+                        minWidth: 720,
+                        dataRowHeight: 56,
+                        columns: const [
+                          DataColumn(label: Text('المعرف')),
+                          DataColumn(label: Text('الاسم')),
+                          DataColumn(label: Text('الدور')),
+                          DataColumn(label: Text('إجراءات')),
+                        ],
+                        rows: users
+                            .map(
+                              (user) => DataRow(
+                                cells: [
+                                  DataCell(Text('${user.id ?? '-'}')),
+                                  DataCell(Text(user.username)),
+                                  DataCell(Text(user.role.displayName)),
+                                  DataCell(
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        OutlinedButton.icon(
+                                          onPressed: () => _editUser(context, user),
+                                          icon: const Icon(Icons.edit),
+                                          label: const Text('تعديل كلمة المرور'),
+                                        ),
+                                        TextButton.icon(
+                                          onPressed: () => _deleteUser(context, user),
+                                          icon: const Icon(Icons.delete_outline),
+                                          label: const Text('حذف'),
                                         ),
                                       ],
                                     ),
-                                  )
-                                  .toList(),
-                            ),
-                          ),
-                      ],
-                    );
-                  },
-                  loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (error, _) => Text('تعذر تحميل المستخدمين: $error'),
-                ),
-              ],
-            ),
+                                  ),
+                                ],
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                ],
+              );
+            },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => Text('تعذر تحميل المستخدمين: $error'),
           ),
         );
       },
@@ -715,6 +939,54 @@ class _UserManagementSectionState extends ConsumerState<_UserManagementSection> 
   }
 }
 
+class _WorkerListTile extends StatelessWidget {
+  const _WorkerListTile({
+    required this.user,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final UserModel user;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final initials = user.username.isNotEmpty ? user.username[0].toUpperCase() : '?';
+
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading: CircleAvatar(
+          child: Text(initials),
+        ),
+        title: Text(
+          user.username,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        subtitle: Text('الدور: ${user.role.displayName}'),
+        trailing: Wrap(
+          spacing: 8,
+          children: [
+            IconButton(
+              tooltip: 'تعديل كلمة المرور',
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined),
+            ),
+            IconButton(
+              tooltip: 'حذف المستخدم',
+              onPressed: onDelete,
+              icon: const Icon(Icons.delete_outline),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SessionsReportSection extends ConsumerWidget {
   const _SessionsReportSection({required this.sessionsAsync, required this.showTimes});
 
@@ -731,71 +1003,82 @@ class _SessionsReportSection extends ConsumerWidget {
           orElse: () => <int, UserModel>{},
         );
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'تقرير الجلسات',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            sessionsAsync.when(
-              data: (sessions) {
-                if (sessions.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 32),
-                    child: Text(
-                      'لا توجد جلسات في الفترة المحددة.',
-                      textAlign: TextAlign.center,
-                    ),
-                  );
-                }
+    return _AdminSectionCard(
+      title: 'تقرير الجلسات',
+      child: sessionsAsync.when(
+        data: (sessions) {
+          if (sessions.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: Text(
+                'لا توجد جلسات في الفترة المحددة.',
+                textAlign: TextAlign.center,
+              ),
+            );
+          }
 
-                final totals = _SessionTableTotals.fromSessions(sessions);
+          final totals = _SessionTableTotals.fromSessions(sessions);
 
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        _SummaryChip(
-                          icon: Icons.event_available,
-                          label: 'عدد الجلسات',
-                          value: Formatters.formatNumber(totals.count.toDouble()),
-                        ),
-                        _SummaryChip(
-                          icon: Icons.lock_open,
-                          label: 'جلسات مفتوحة',
-                          value: Formatters.formatNumber(totals.openCount.toDouble()),
-                          color: Colors.orange,
-                        ),
-                        _SummaryChip(
-                          icon: Icons.lock,
-                          label: 'جلسات مغلقة',
-                          value: Formatters.formatNumber(totals.closedCount.toDouble()),
-                          color: Colors.green,
-                        ),
-                        _SummaryChip(
-                          icon: Icons.savings,
-                          label: 'صافي الفرق النقدي',
-                          value: Formatters.formatCurrency(totals.totalCashDifference),
-                        ),
-                        _SummaryChip(
-                          icon: Icons.account_balance_wallet,
-                          label: 'تغير الفليكسي',
-                          value: Formatters.formatCurrency(totals.totalFlexiMovement),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final isCompact = constraints.maxWidth < 900;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      _SummaryChip(
+                        icon: Icons.event_available,
+                        label: 'عدد الجلسات',
+                        value: Formatters.formatNumber(totals.count.toDouble()),
+                      ),
+                      _SummaryChip(
+                        icon: Icons.lock_open,
+                        label: 'جلسات مفتوحة',
+                        value: Formatters.formatNumber(totals.openCount.toDouble()),
+                        color: Colors.orange,
+                      ),
+                      _SummaryChip(
+                        icon: Icons.lock,
+                        label: 'جلسات مغلقة',
+                        value: Formatters.formatNumber(totals.closedCount.toDouble()),
+                        color: Colors.green,
+                      ),
+                      _SummaryChip(
+                        icon: Icons.savings,
+                        label: 'صافي الفرق النقدي',
+                        value: Formatters.formatCurrency(totals.totalCashDifference),
+                      ),
+                      _SummaryChip(
+                        icon: Icons.account_balance_wallet,
+                        label: 'تغير الفليكسي',
+                        value: Formatters.formatCurrency(totals.totalFlexiMovement),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (isCompact)
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemBuilder: (context, index) {
+                        final session = sessions[index];
+                        return _SessionReportTile(
+                          session: session,
+                          user: usersMap[session.userId],
+                          showTimes: showTimes,
+                          onDetails: session.id == null
+                              ? null
+                              : () => _showSessionDetails(context, ref, session),
+                        );
+                      },
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemCount: sessions.length,
+                    )
+                  else
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: DataTable2(
@@ -865,14 +1148,13 @@ class _SessionsReportSection extends ConsumerWidget {
                             .toList(),
                       ),
                     ),
-                  ],
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Text('تعذر تحميل الجلسات: $error'),
-            ),
-          ],
-        ),
+                ],
+              );
+            },
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => Text('تعذر تحميل الجلسات: $error'),
       ),
     );
   }
