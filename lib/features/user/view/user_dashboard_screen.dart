@@ -754,7 +754,11 @@ class _TransactionsTable extends ConsumerWidget {
                           children: [
                             IconButton(
                               icon: const Icon(Icons.edit),
-                              onPressed: () => _editTransaction(context, controller, expense[index]),
+                              onPressed: () => _showEditTransactionDialog(
+                                context: context,
+                                controller: controller,
+                                transaction: expense[index],
+                              ),
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete_outline),
@@ -775,61 +779,6 @@ class _TransactionsTable extends ConsumerWidget {
     );
   }
 
-  Future<void> _editTransaction(
-    BuildContext context,
-    SessionController controller,
-    CashTransactionModel transaction,
-  ) async {
-    final formKey = GlobalKey<FormState>();
-    final amountController = TextEditingController(text: transaction.amount.toString());
-    final descriptionController = TextEditingController(text: transaction.description ?? '');
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('تعديل مصروف'),
-          content: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: amountController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'المبلغ'),
-                  validator: (value) => value == null || value.isEmpty ? 'إلزامي' : null,
-                ),
-                TextFormField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(labelText: 'الوصف'),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
-            FilledButton(
-              onPressed: () {
-                if (formKey.currentState!.validate()) {
-                  Navigator.pop(context, true);
-                }
-              },
-              child: const Text('حفظ'),
-            ),
-          ],
-        );
-      },
-    );
-    if (result == true) {
-      await controller.updateTransaction(
-        transaction: transaction.copyWith(
-          amount: double.parse(amountController.text),
-          description: descriptionController.text,
-          timestamp: DateTime.now(),
-        ),
-      );
-    }
-  }
 }
 
 class _MobileTransactionsList extends ConsumerWidget {
@@ -883,7 +832,11 @@ class _MobileTransactionsList extends ConsumerWidget {
                                 IconButton(
                                   icon: const Icon(Icons.edit, size: 18),
                                   tooltip: 'تعديل',
-                                  onPressed: () => _editTransaction(context, controller, tx),
+                                  onPressed: () => _showEditTransactionDialog(
+                                    context: context,
+                                    controller: controller,
+                                    transaction: tx,
+                                  ),
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete_outline, size: 18),
@@ -984,7 +937,7 @@ class _MobileFlexiList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final transactionsAsync = ref.watch(flexiTransactionsProvider(session.id!));
+    final transactionsAsync = ref.watch(sessionFlexiProvider(session.id!));
     final controller = ref.watch(sessionControllerProvider);
     return Card(
       child: Padding(
@@ -1034,8 +987,16 @@ class _MobileFlexiList extends ConsumerWidget {
                             const SizedBox(height: 4),
                             Switch(
                               value: tx.isPaid,
-                              onChanged: (value) => controller.toggleFlexiPaid(tx, value),
-                              activeColor: Colors.teal,
+                              onChanged: (value) => controller.markFlexiPaid(tx.id!, value),
+                              thumbColor: MaterialStateProperty.resolveWith(
+                                (states) =>
+                                    states.contains(MaterialState.selected) ? Colors.teal : null,
+                              ),
+                              trackColor: MaterialStateProperty.resolveWith(
+                                (states) => states.contains(MaterialState.selected)
+                                    ? Colors.teal.withOpacity(0.4)
+                                    : null,
+                              ),
                             ),
                           ],
                         ),
@@ -1048,6 +1009,62 @@ class _MobileFlexiList extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+Future<void> _showEditTransactionDialog({
+  required BuildContext context,
+  required SessionController controller,
+  required CashTransactionModel transaction,
+}) async {
+  final formKey = GlobalKey<FormState>();
+  final amountController = TextEditingController(text: transaction.amount.toString());
+  final descriptionController = TextEditingController(text: transaction.description ?? '');
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text('تعديل مصروف'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: amountController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'المبلغ'),
+                validator: (value) => value == null || value.isEmpty ? 'إلزامي' : null,
+              ),
+              TextFormField(
+                controller: descriptionController,
+                decoration: const InputDecoration(labelText: 'الوصف'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(context, true);
+              }
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      );
+    },
+  );
+  if (result == true) {
+    await controller.updateTransaction(
+      transaction: transaction.copyWith(
+        amount: double.tryParse(amountController.text) ?? transaction.amount,
+        description: descriptionController.text,
+        timestamp: DateTime.now(),
       ),
     );
   }
