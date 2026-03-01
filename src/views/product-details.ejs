@@ -1,0 +1,39 @@
+<%- include('partials/head', { title: product.title }) %>
+<%- include('partials/header') %>
+<section class="container details">
+  <div>
+    <img class="main-image" src="<%= (images[0] && images[0].image_path) || '/uploads/placeholder.svg' %>" alt="<%= product.title %>">
+    <div class="thumbs">
+      <% images.forEach(img => { %><img src="<%= img.image_path %>" alt="<%= product.title %>"><% }) %>
+    </div>
+  </div>
+  <div>
+    <h1><%= product.title %></h1>
+    <p><%= product.description %></p>
+    <p class="price"><%= product.price %> دج <% if(product.old_price){ %><span><%= product.old_price %> دج</span><% } %></p>
+
+    <form method="POST" action="/order/<%= product.id %>" class="order-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <h3>اطلب الآن (الدفع عند الاستلام)</h3>
+      <div class="two">
+        <input name="first_name" placeholder="الاسم" required>
+        <input name="last_name" placeholder="اللقب" required>
+      </div>
+      <div class="two">
+        <input name="phone" placeholder="رقم الهاتف" required>
+        <input name="state" placeholder="الولاية" required>
+      </div>
+      <div class="two">
+        <select name="size"><option value="">اختر المقاس</option>
+          <% (product.sizes||'').split(',').filter(Boolean).forEach(s=>{ %><option value="<%= s %>"><%= s %></option><% }) %>
+        </select>
+        <select name="color"><option value="">اختر اللون</option>
+          <% (product.colors||'').split(',').filter(Boolean).forEach(c=>{ %><option value="<%= c %>"><%= c %></option><% }) %>
+        </select>
+      </div>
+      <textarea name="notes" placeholder="ملاحظات إضافية (اختياري)"></textarea>
+      <button class="btn" type="submit">تأكيد الطلب</button>
+    </form>
+  </div>
+</section>
+<%- include('partials/footer') %>

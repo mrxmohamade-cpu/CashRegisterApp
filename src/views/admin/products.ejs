@@ -1,0 +1,40 @@
+<%- include('../partials/head', { title: 'إدارة المنتجات' }) %>
+<section class="container">
+  <h1>إدارة المنتجات</h1>
+  <%- include('partials') %>
+
+  <form method="POST" action="/admin/products" enctype="multipart/form-data" class="panel">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <h3>إضافة منتج جديد</h3>
+    <input name="title" placeholder="اسم المنتج" required>
+    <textarea name="description" placeholder="الوصف"></textarea>
+    <div class="two"><input type="number" name="price" placeholder="السعر" required><input type="number" name="old_price" placeholder="السعر قبل التخفيض"></div>
+    <div class="two">
+      <select name="category_id" required>
+        <% categories.forEach(c=> { %><option value="<%= c.id %>"><%= c.name %></option><% }) %>
+      </select>
+      <input type="number" name="stock" placeholder="الكمية" value="1">
+    </div>
+    <div class="two"><input name="sizes" placeholder="المقاسات: S,M,L"><input name="colors" placeholder="الألوان: أسود,أبيض"></div>
+    <label><input type="checkbox" name="is_featured"> منتج مميز</label>
+    <label><input type="checkbox" name="is_active" checked> مفعل</label>
+    <input type="file" name="images" multiple>
+    <button class="btn">حفظ المنتج</button>
+  </form>
+
+  <table>
+    <tr><th>الصورة</th><th>المنتج</th><th>السعر</th><th>الحالة</th><th>إجراءات</th></tr>
+    <% products.forEach(p=>{ %>
+      <tr>
+        <td><img class="thumb" src="<%= p.image || '/uploads/placeholder.svg' %>"></td>
+        <td><%= p.title %></td><td><%= p.price %> دج</td>
+        <td><%= p.is_active ? 'مفعل':'معطل' %></td>
+        <td>
+          <form method="POST" action="/admin/products/<%= p.id %>/toggle" style="display:inline"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="link-btn">تفعيل/تعطيل</button></form>
+          <form method="POST" action="/admin/products/<%= p.id %>/delete" style="display:inline" onsubmit="return confirm('تأكيد الحذف؟')"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="link-btn danger">حذف</button></form>
+        </td>
+      </tr>
+    <% }) %>
+  </table>
+</section>
+<%- include('../partials/footer') %>

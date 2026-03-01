@@ -1,0 +1,36 @@
+<%- include('../partials/head', { title: 'إدارة الطلبات' }) %>
+<section class="container">
+  <h1>الطلبات</h1>
+  <%- include('partials') %>
+
+  <form method="GET" action="/admin/orders" class="panel">
+    <input name="phone" value="<%= phone %>" placeholder="بحث برقم الهاتف">
+    <button class="btn">بحث</button>
+  </form>
+
+  <table>
+    <tr><th>المنتج</th><th>الزبون</th><th>الهاتف</th><th>الولاية</th><th>الحالة</th><th>التاريخ</th><th>تحديث</th></tr>
+    <% orders.forEach(o=>{ %>
+      <tr>
+        <td><%= o.product_title %></td>
+        <td><%= o.first_name %> <%= o.last_name %></td>
+        <td><%= o.phone %></td>
+        <td><%= o.state %></td>
+        <td><%= o.status %></td>
+        <td><%= dayjs(o.created_at).format('YYYY-MM-DD HH:mm') %></td>
+        <td>
+          <form method="POST" action="/admin/orders/<%= o.id %>/status">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <select name="status">
+              <% ['طلب جديد','تم الاتصال بالزبون','تم تأكيد الطلب','تم الشحن','تم التسليم','ملغي'].forEach(s=>{ %>
+                <option value="<%= s %>" <%= o.status===s?'selected':'' %>><%= s %></option>
+              <% }) %>
+            </select>
+            <button class="link-btn">حفظ</button>
+          </form>
+        </td>
+      </tr>
+    <% }) %>
+  </table>
+</section>
+<%- include('../partials/footer') %>

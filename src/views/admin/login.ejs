@@ -1,0 +1,12 @@
+<%- include('../partials/head', { title: 'دخول المدير' }) %>
+<section class="container admin-login">
+  <h1>تسجيل دخول الإدارة</h1>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+  <form method="POST" action="/admin/login" class="auth-card">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input name="username" placeholder="اسم المستخدم" required>
+    <input type="password" name="password" placeholder="كلمة المرور" required>
+    <button class="btn" type="submit">دخول</button>
+  </form>
+</section>
+<%- include('../partials/footer') %>
