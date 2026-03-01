@@ -1,0 +1,25 @@
+{
+  "name": "cashregisterapp-store",
+  "version": "1.0.0",
+  "description": "RTL fashion ecommerce with COD order flow",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "init-db": "node src/setupDb.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.8.1",
+    "cookie-parser": "^1.4.7",
+    "csurf": "^1.11.0",
+    "dayjs": "^1.11.13",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.1.0",
+    "method-override": "^3.0.0",
+    "multer": "^1.4.5-lts.1",
+    "sanitize-html": "^2.14.0"
+  }
+}

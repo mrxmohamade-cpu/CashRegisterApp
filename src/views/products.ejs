@@ -1,0 +1,41 @@
+<%- include('partials/head', { title: 'كل المنتجات' }) %>
+<%- include('partials/header') %>
+<section class="container products-page">
+  <aside class="filters">
+    <h3>فلترة المنتجات</h3>
+    <form method="GET" action="/products">
+      <label>السعر من</label><input type="number" name="minPrice" value="<%= filters.minPrice || '' %>">
+      <label>السعر إلى</label><input type="number" name="maxPrice" value="<%= filters.maxPrice || '' %>">
+      <label>القسم</label>
+      <select name="category">
+        <option value="">الكل</option>
+        <% categories.forEach(c => { %>
+          <option value="<%= c.id %>" <%= String(filters.category)===String(c.id)?'selected':'' %>><%= c.name %></option>
+        <% }) %>
+      </select>
+      <label>المقاس</label><input name="size" value="<%= filters.size || '' %>">
+      <label>اللون</label><input name="color" value="<%= filters.color || '' %>">
+      <label>الترتيب</label>
+      <select name="sort">
+        <option value="latest">الأحدث</option>
+        <option value="priceAsc" <%= filters.sort==='priceAsc'?'selected':'' %>>الأرخص</option>
+        <option value="priceDesc" <%= filters.sort==='priceDesc'?'selected':'' %>>الأغلى</option>
+      </select>
+      <button class="btn" type="submit">تطبيق</button>
+    </form>
+  </aside>
+  <div>
+    <h2>المنتجات</h2>
+    <div class="grid">
+      <% products.forEach(p => { %>
+        <article class="card">
+          <img src="<%= p.image || '/uploads/placeholder.svg' %>" alt="<%= p.title %>">
+          <h3><%= p.title %></h3>
+          <p><%= p.price %> دج</p>
+          <a class="btn small" href="/products/<%= p.id %>">التفاصيل</a>
+        </article>
+      <% }) %>
+    </div>
+  </div>
+</section>
+<%- include('partials/footer') %>

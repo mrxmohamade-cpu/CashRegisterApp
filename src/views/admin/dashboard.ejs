@@ -1,0 +1,19 @@
+<%- include('../partials/head', { title: 'لوحة التحكم' }) %>
+<section class="container">
+  <h1>لوحة التحكم</h1>
+  <%- include('partials') %>
+  <div class="stats">
+    <div class="stat">إجمالي الطلبات: <strong><%= stats.totalOrders %></strong></div>
+    <div class="stat">المؤكدة: <strong><%= stats.confirmedOrders %></strong></div>
+    <div class="stat">الملغاة: <strong><%= stats.canceledOrders %></strong></div>
+    <div class="stat">عدد المنتجات: <strong><%= stats.products %></strong></div>
+  </div>
+  <h2>آخر الطلبات</h2>
+  <table>
+    <tr><th>المنتج</th><th>الهاتف</th><th>الحالة</th><th>التاريخ</th></tr>
+    <% recentOrders.forEach(o=>{ %>
+    <tr><td><%= o.product_title %></td><td><%= o.phone %></td><td><%= o.status %></td><td><%= dayjs(o.created_at).format('YYYY-MM-DD HH:mm') %></td></tr>
+    <% }) %>
+  </table>
+</section>
+<%- include('../partials/footer') %>

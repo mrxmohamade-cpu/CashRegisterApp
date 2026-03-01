@@ -1,0 +1,20 @@
+<%- include('../partials/head', { title: 'إدارة الأقسام' }) %>
+<section class="container">
+  <h1>إدارة الأقسام</h1>
+  <%- include('partials') %>
+
+  <form method="POST" action="/admin/categories" class="panel">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input name="name" placeholder="اسم القسم" required>
+    <button class="btn">إضافة قسم</button>
+  </form>
+
+  <table>
+    <tr><th>#</th><th>القسم</th><th>إجراء</th></tr>
+    <% categories.forEach(c=>{ %>
+      <tr><td><%= c.id %></td><td><%= c.name %></td>
+      <td><form method="POST" action="/admin/categories/<%= c.id %>/delete"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="link-btn danger">حذف</button></form></td></tr>
+    <% }) %>
+  </table>
+</section>
+<%- include('../partials/footer') %>

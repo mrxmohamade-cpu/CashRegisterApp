@@ -1,0 +1,10 @@
+<div class="admin-nav">
+  <a href="/admin">الرئيسية</a>
+  <a href="/admin/products">المنتجات</a>
+  <a href="/admin/categories">الأقسام</a>
+  <a href="/admin/orders">الطلبات</a>
+  <form method="POST" action="/admin/logout" style="display:inline">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <button class="link-btn">خروج</button>
+  </form>
+</div>

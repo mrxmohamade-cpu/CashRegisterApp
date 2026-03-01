@@ -1,0 +1,55 @@
+<%- include('partials/head', { title: 'المتجر الإلكتروني - الرئيسية' }) %>
+<%- include('partials/header') %>
+
+<section class="hero">
+  <div class="container hero-grid">
+    <div>
+      <h1>أحدث صيحات الموضة بأسعار مميزة</h1>
+      <p>متجر احترافي يدعم الدفع عند الاستلام، مع تجربة سريعة ومتجاوبة بالكامل.</p>
+      <a class="btn" href="/products">تسوق الآن</a>
+    </div>
+    <div class="hero-card">
+      <h3>عروض اليوم</h3>
+      <p>خصومات حتى 30% على الملابس المختارة.</p>
+    </div>
+  </div>
+</section>
+
+<section class="container">
+  <h2>الأقسام</h2>
+  <div class="chips">
+    <% categories.forEach(c => { %>
+      <a class="chip" href="/products?category=<%= c.id %>"><%= c.name %></a>
+    <% }) %>
+  </div>
+</section>
+
+<section class="container">
+  <h2>منتجات مميزة</h2>
+  <div class="grid">
+    <% featured.forEach(p => { %>
+      <article class="card">
+        <img src="<%= p.image || '/uploads/placeholder.svg' %>" alt="<%= p.title %>">
+        <h3><%= p.title %></h3>
+        <p><%= p.price %> دج</p>
+        <a class="btn small" href="/products/<%= p.id %>">التفاصيل</a>
+      </article>
+    <% }) %>
+  </div>
+</section>
+
+<section class="container">
+  <h2>أحدث المنتجات</h2>
+  <div class="grid">
+    <% latest.forEach(p => { %>
+      <article class="card">
+        <img src="<%= p.image || '/uploads/placeholder.svg' %>" alt="<%= p.title %>">
+        <h3><%= p.title %></h3>
+        <p><%= p.price %> دج</p>
+        <a class="btn small" href="/products/<%= p.id %>">التفاصيل</a>
+      </article>
+    <% }) %>
+  </div>
+</section>
+
+<%- include('partials/footer') %>
